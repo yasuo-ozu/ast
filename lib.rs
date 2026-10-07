@@ -10,7 +10,7 @@
 //!   `impl Repeater<N> for <the AST type>` per field type that depends on the definition's type
 //!   context, so a consumer can name those types portably as `<T as ::ast::Repeater<N>>::Type`
 //!   regardless of which crate or module it expands in.
-//! * [`Walk`]/[`WalkMut`] and the [`SeqView`]/[`OptView`]/[`MapView`] slot views, which the
+//! * [`walk::Walk`]/[`walk::WalkMut`] and the [`SeqView`]/[`OptView`]/[`MapView`] slot views, which the
 //!   generated descent bottoms out in.
 
 #[doc(hidden)]
@@ -381,7 +381,7 @@ pub trait Repeater<const INDEX: usize> {
 // unbounded) and [`OptView`] (Option-like, ≤1). Two are descent-only: [`MapView`], because a map holds
 // the node in its VALUE slot, which no positional view can address.
 //
-// These are **edit** views only: the descent itself goes through [`Walk`]. The element type is a
+// These are **edit** views only: the descent itself goes through [`walk::Walk`]. The element type is a
 // **type parameter** (`SeqView<T>`, not an associated type), and the traits are bare-element — a
 // `#[seq]`/`#[opt]` field must be a bare `Vec<T>`/`Option<T>`, never a wrapped one.
 
@@ -520,7 +520,7 @@ impl<'a, T, V: SeqView<T>> ExactSizeIterator for SeqIterMut<'a, T, V> {}
 /// the viewed element is the map's value type rather than its first type argument. Descent-only — a map
 /// slot is keyed, so there is no positional structural edit and hence no `#[seq]`/`#[opt]` counterpart.
 ///
-/// **No longer part of the walk.** A map field descends through [`Walk`], whose `Thru<H>` impl for
+/// **No longer part of the walk.** A map field descends through [`walk::Walk`], whose `Thru<H>` impl for
 /// `HashMap`/`BTreeMap` iterates the values directly. This trait is kept as a way to write that
 /// traversal by hand; nothing `visitor!` generates refers to it.
 /// The borrow is a parameter of the trait rather than of the methods, so the two iterators can be
@@ -560,7 +560,7 @@ impl<'a, K: 'a, V: 'a> MapView<'a, V> for std::collections::BTreeMap<K, V> {
 }
 
 /// A mutable, **Option-like** view (≤1 element) of an AST `Option` field, bare-element (a nested
-/// `Box`/`Attempt` layer descends separately, through [`Walk`]). A generated
+/// `Box`/`Attempt` layer descends separately, through [`walk::Walk`]). A generated
 /// `visit_<t>_opt_mut(&mut self, &mut impl OptView<T>)` receives one, and `visit_<t>_opt` a `&`.
 pub trait OptView<T> {
     fn is_some(&self) -> bool;
@@ -590,7 +590,7 @@ pub trait OptView<T> {
 
 // `SeqView`/`OptView` are **bare-element**: the container holds the viewed node `T` directly (no element
 // adapter). A transparent single-slot wrapper (`Box<T>`/`Attempt<T>`/user wrappers) is reached by
-// [`Walk`] instead. Such a slot can be neither emptied nor filled, so it is descent-only — never a
+// [`walk::Walk`] instead. Such a slot can be neither emptied nor filled, so it is descent-only — never a
 // `#[seq]`/`#[opt]` edit target.
 
 impl<T> SeqView<T> for Vec<T> {
@@ -647,223 +647,223 @@ impl<T> OptView<T> for Option<T> {
     }
 }
 
-/// Which parts of a value a walk descends into, as a type.
+/// The descent: how an AST value hands its parts to a visitor, and the indicators that say which
+/// parts those are. The trait `visitor!` generates is the dispatch half; this is the other.
 ///
-/// `visitor!` computes one of these per field from the field's shape and spells it at the call site,
-/// so the descent never names a leaf type or matches a container by name. The language is small:
+/// Every traversal a generated `visit_*` performs is one [`walk::Walk::walk`] call. An indicator —
+/// computed per field from the field's *shape* — picks the impl, so the descent never names a leaf
+/// type and never matches a container by name. The language is small:
 ///
 /// | indicator | meaning |
 /// |---|---|
-/// | [`Here`](indicator::Here) | `Self` is a visited node — hand it to the visitor |
-/// | [`Skip`] | do not descend |
-/// | [`Thru<H>`](indicator::Thru) | `Self` is a container — delegate `H` to what it holds |
+/// | [`Here`](walk::Here) | `Self` is a visited node — hand it to the visitor |
+/// | [`Skip`](walk::Skip) | do not descend |
+/// | [`Thru<H>`](walk::Thru) | `Self` is a container — delegate `H` to what it holds |
 /// | `(H0, .., Hn)` | `Self` is a tuple — delegate each `Hi` to slot `i` |
 ///
-/// So `Vec<(Length, Line)>` is walked at `Thru<(Skip, Here)>`: through the `Vec`, past the `Length`,
-/// into the `Line`.
-pub mod indicator {
+/// So `Vec<(Length, Line)>` is walked at `Thru<(Skip, Here)>`: through the `Vec`, past the
+/// `Length`, into the `Line`.
+pub mod walk {
     /// `Self` is a visited node: hand it to the visitor.
     pub struct Here;
     /// Do not descend into `Self`.
     pub struct Skip;
     /// `Self` is a container: delegate `H` to the value(s) it holds.
     pub struct Thru<H>(core::marker::PhantomData<H>);
-}
 
-use indicator::{Skip, Thru};
+    /// How an AST value hands itself to a visitor — the descent half of the walk, where the trait
+    /// `visitor!` generates is the dispatch half.
+    ///
+    /// `V` is the visitor. `M` is the tag minted by the `visitor!` module the walk belongs to, so two
+    /// visitor modules over the same node do not write conflicting impls. `H` is the indicator:
+    /// which parts of `Self` to descend into.
+    ///
+    /// `H` is what lets the container impls below stay generic in the types they hold — `(Length, Line)`
+    /// and `(Line, Line)` are the *same* impl at different indicators — so no leaf type is ever named and
+    /// no shape needs an impl of its own.
+    #[cfg_attr(
+        has_diagnostic,
+        diagnostic::on_unimplemented(
+            message = "`{Self}` cannot be walked at `{H}`",
+            label = "this field's shape has no `Walk` impl",
+            note = "a visited node needs `#[derive(Ast)]` and an entry in the owning type's `#[subast(..)]`; \
+                a container of one needs a `Walk` impl, which `ast::visit` has for `Vec`, `VecDeque`, \
+                `Option`, `Box`, maps, slices, arrays and tuples, and which a crate can add for a \
+                container of its own"
+        )
+    )]
+    pub trait Walk<M, H, V: ?Sized> {
+        /// Offer the parts of `self` that `H` selects to `v`.
+        fn walk(&self, v: &mut V);
+    }
 
-/// How an AST value hands itself to a visitor — the descent half of the walk, where the trait
-/// `visitor!` generates is the dispatch half.
-///
-/// `V` is the visitor. `M` is the tag minted by the `visitor!` module the walk belongs to, so two
-/// visitor modules over the same node do not write conflicting impls. `H` is the [`indicator`]:
-/// which parts of `Self` to descend into.
-///
-/// `H` is what lets the container impls below stay generic in the types they hold — `(Length, Line)`
-/// and `(Line, Line)` are the *same* impl at different indicators — so no leaf type is ever named and
-/// no shape needs an impl of its own.
-#[cfg_attr(
-    has_diagnostic,
-    diagnostic::on_unimplemented(
-        message = "`{Self}` cannot be walked at `{H}`",
-        label = "this field's shape has no `Walk` impl",
-        note = "a visited node needs `#[derive(Ast)]` and an entry in the owning type's `#[subast(..)]`; \
-            a container of one needs a `Walk` impl, which `ast::visit` has for `Vec`, `VecDeque`, \
-            `Option`, `Box`, maps, slices, arrays and tuples, and which a crate can add for a \
-            container of its own"
-    )
-)]
-pub trait Walk<M, H, V: ?Sized> {
-    /// Offer the parts of `self` that `H` selects to `v`.
-    fn walk(&self, v: &mut V);
-}
+    /// The `&mut` half of [`Walk`].
+    #[cfg_attr(
+        has_diagnostic,
+        diagnostic::on_unimplemented(
+            message = "`{Self}` cannot be walked mutably at `{H}`",
+            label = "this field's shape has no `WalkMut` impl",
+            note = "a field behind a shared `&` is walkable on the shared side only"
+        )
+    )]
+    pub trait WalkMut<M, H, V: ?Sized> {
+        /// Offer the parts of `self` that `H` selects to `v`, by `&mut`.
+        fn walk_mut(&mut self, v: &mut V);
+    }
 
-/// The `&mut` half of [`Walk`].
-#[cfg_attr(
-    has_diagnostic,
-    diagnostic::on_unimplemented(
-        message = "`{Self}` cannot be walked mutably at `{H}`",
-        label = "this field's shape has no `WalkMut` impl",
-        note = "a field behind a shared `&` is walkable on the shared side only"
-    )
-)]
-pub trait WalkMut<M, H, V: ?Sized> {
-    /// Offer the parts of `self` that `H` selects to `v`, by `&mut`.
-    fn walk_mut(&mut self, v: &mut V);
-}
+    // `Skip` descends nowhere, whatever it is applied to. A blanket over every type — but at one fixed
+    // indicator, so it overlaps nothing else. This is what frees a leaf type from having to say anything
+    // about itself, even when it shares a tuple with a node.
+    impl<M, V: ?Sized, T: ?Sized> Walk<M, Skip, V> for T {
+        fn walk(&self, _: &mut V) {}
+    }
 
-// `Skip` descends nowhere, whatever it is applied to. A blanket over every type — but at one fixed
-// indicator, so it overlaps nothing else. This is what frees a leaf type from having to say anything
-// about itself, even when it shares a tuple with a node.
-impl<M, V: ?Sized, T: ?Sized> Walk<M, Skip, V> for T {
-    fn walk(&self, _: &mut V) {}
-}
+    impl<M, V: ?Sized, T: ?Sized> WalkMut<M, Skip, V> for T {
+        fn walk_mut(&mut self, _: &mut V) {}
+    }
 
-impl<M, V: ?Sized, T: ?Sized> WalkMut<M, Skip, V> for T {
-    fn walk_mut(&mut self, _: &mut V) {}
-}
-
-macro_rules! walk_seq {
-    ($($ty:ty $(where $($p:ident),+)?),* $(,)?) => {
-        $(
-            impl<M, H, V: ?Sized, T: Walk<M, H, V> $(, $($p),+)?> Walk<M, Thru<H>, V> for $ty {
-                fn walk(&self, v: &mut V) {
-                    for x in self.iter() {
-                        x.walk(v);
+    macro_rules! walk_seq {
+        ($($ty:ty $(where $($p:ident),+)?),* $(,)?) => {
+            $(
+                impl<M, H, V: ?Sized, T: Walk<M, H, V> $(, $($p),+)?> Walk<M, Thru<H>, V> for $ty {
+                    fn walk(&self, v: &mut V) {
+                        for x in self.iter() {
+                            x.walk(v);
+                        }
                     }
                 }
-            }
-            impl<M, H, V: ?Sized, T: WalkMut<M, H, V> $(, $($p),+)?> WalkMut<M, Thru<H>, V> for $ty {
-                fn walk_mut(&mut self, v: &mut V) {
-                    for x in self.iter_mut() {
-                        x.walk_mut(v);
+                impl<M, H, V: ?Sized, T: WalkMut<M, H, V> $(, $($p),+)?> WalkMut<M, Thru<H>, V> for $ty {
+                    fn walk_mut(&mut self, v: &mut V) {
+                        for x in self.iter_mut() {
+                            x.walk_mut(v);
+                        }
                     }
                 }
+            )*
+        };
+    }
+
+    walk_seq!(Vec<T>, [T], std::collections::VecDeque<T>);
+
+    impl<M, H, V: ?Sized, T: Walk<M, H, V>, const N: usize> Walk<M, Thru<H>, V> for [T; N] {
+        fn walk(&self, v: &mut V) {
+            for x in self.iter() {
+                x.walk(v);
             }
-        )*
-    };
-}
-
-walk_seq!(Vec<T>, [T], std::collections::VecDeque<T>);
-
-impl<M, H, V: ?Sized, T: Walk<M, H, V>, const N: usize> Walk<M, Thru<H>, V> for [T; N] {
-    fn walk(&self, v: &mut V) {
-        for x in self.iter() {
-            x.walk(v);
         }
     }
-}
 
-impl<M, H, V: ?Sized, T: WalkMut<M, H, V>, const N: usize> WalkMut<M, Thru<H>, V> for [T; N] {
-    fn walk_mut(&mut self, v: &mut V) {
-        for x in self.iter_mut() {
-            x.walk_mut(v);
+    impl<M, H, V: ?Sized, T: WalkMut<M, H, V>, const N: usize> WalkMut<M, Thru<H>, V> for [T; N] {
+        fn walk_mut(&mut self, v: &mut V) {
+            for x in self.iter_mut() {
+                x.walk_mut(v);
+            }
         }
     }
-}
 
-impl<M, H, V: ?Sized, T: Walk<M, H, V>> Walk<M, Thru<H>, V> for Option<T> {
-    fn walk(&self, v: &mut V) {
-        if let Some(x) = self {
-            x.walk(v);
+    impl<M, H, V: ?Sized, T: Walk<M, H, V>> Walk<M, Thru<H>, V> for Option<T> {
+        fn walk(&self, v: &mut V) {
+            if let Some(x) = self {
+                x.walk(v);
+            }
         }
     }
-}
 
-impl<M, H, V: ?Sized, T: WalkMut<M, H, V>> WalkMut<M, Thru<H>, V> for Option<T> {
-    fn walk_mut(&mut self, v: &mut V) {
-        if let Some(x) = self {
-            x.walk_mut(v);
+    impl<M, H, V: ?Sized, T: WalkMut<M, H, V>> WalkMut<M, Thru<H>, V> for Option<T> {
+        fn walk_mut(&mut self, v: &mut V) {
+            if let Some(x) = self {
+                x.walk_mut(v);
+            }
         }
     }
-}
 
-// A map holds the node in its VALUE slot, so only the values are walked.
-macro_rules! walk_map {
-    ($($ty:ty),* $(,)?) => {
-        $(
-            impl<M, H, V: ?Sized, K, T: Walk<M, H, V>> Walk<M, Thru<H>, V> for $ty {
-                fn walk(&self, v: &mut V) {
-                    for x in self.values() {
-                        x.walk(v);
+    // A map holds the node in its VALUE slot, so only the values are walked.
+    macro_rules! walk_map {
+        ($($ty:ty),* $(,)?) => {
+            $(
+                impl<M, H, V: ?Sized, K, T: Walk<M, H, V>> Walk<M, Thru<H>, V> for $ty {
+                    fn walk(&self, v: &mut V) {
+                        for x in self.values() {
+                            x.walk(v);
+                        }
                     }
                 }
-            }
-            impl<M, H, V: ?Sized, K, T: WalkMut<M, H, V>> WalkMut<M, Thru<H>, V> for $ty {
-                fn walk_mut(&mut self, v: &mut V) {
-                    for x in self.values_mut() {
-                        x.walk_mut(v);
+                impl<M, H, V: ?Sized, K, T: WalkMut<M, H, V>> WalkMut<M, Thru<H>, V> for $ty {
+                    fn walk_mut(&mut self, v: &mut V) {
+                        for x in self.values_mut() {
+                            x.walk_mut(v);
+                        }
                     }
                 }
-            }
-        )*
-    };
-}
-
-walk_map!(std::collections::HashMap<K, T>, std::collections::BTreeMap<K, T>);
-
-// A field behind a shared reference is walkable on the shared side only — there is no `&mut` to be had
-// through a `&`, so there is deliberately no `WalkMut` twin.
-impl<M, H, V: ?Sized, T: Walk<M, H, V> + ?Sized> Walk<M, Thru<H>, V> for &T {
-    fn walk(&self, v: &mut V) {
-        (**self).walk(v);
+            )*
+        };
     }
-}
 
-/// Transparent single-slot wrappers. A consumer's own wrapper joins the same way:
-///
-/// ```
-/// # use ast::visit::{Walk, WalkMut, indicator::Thru};
-/// struct MyPtr<T>(Box<T>);
-/// impl<M, H, V: ?Sized, T: Walk<M, H, V>> Walk<M, Thru<H>, V> for MyPtr<T> {
-///     fn walk(&self, v: &mut V) { <T as Walk<M, H, V>>::walk(&self.0, v) }
-/// }
-/// impl<M, H, V: ?Sized, T: WalkMut<M, H, V>> WalkMut<M, Thru<H>, V> for MyPtr<T> {
-///     fn walk_mut(&mut self, v: &mut V) { <T as WalkMut<M, H, V>>::walk_mut(&mut self.0, v) }
-/// }
-/// ```
-impl<M, H, V: ?Sized, T: Walk<M, H, V> + ?Sized> Walk<M, Thru<H>, V> for Box<T> {
-    fn walk(&self, v: &mut V) {
-        (**self).walk(v);
+    walk_map!(std::collections::HashMap<K, T>, std::collections::BTreeMap<K, T>);
+
+    // A field behind a shared reference is walkable on the shared side only — there is no `&mut` to be had
+    // through a `&`, so there is deliberately no `WalkMut` twin.
+    impl<M, H, V: ?Sized, T: Walk<M, H, V> + ?Sized> Walk<M, Thru<H>, V> for &T {
+        fn walk(&self, v: &mut V) {
+            (**self).walk(v);
+        }
     }
-}
 
-impl<M, H, V: ?Sized, T: WalkMut<M, H, V> + ?Sized> WalkMut<M, Thru<H>, V> for Box<T> {
-    fn walk_mut(&mut self, v: &mut V) {
-        (**self).walk_mut(v);
+    /// Transparent single-slot wrappers. A consumer's own wrapper joins the same way:
+    ///
+    /// ```
+    /// # use ast::walk::{Walk, WalkMut, Thru};
+    /// struct MyPtr<T>(Box<T>);
+    /// impl<M, H, V: ?Sized, T: Walk<M, H, V>> Walk<M, Thru<H>, V> for MyPtr<T> {
+    ///     fn walk(&self, v: &mut V) { <T as Walk<M, H, V>>::walk(&self.0, v) }
+    /// }
+    /// impl<M, H, V: ?Sized, T: WalkMut<M, H, V>> WalkMut<M, Thru<H>, V> for MyPtr<T> {
+    ///     fn walk_mut(&mut self, v: &mut V) { <T as WalkMut<M, H, V>>::walk_mut(&mut self.0, v) }
+    /// }
+    /// ```
+    impl<M, H, V: ?Sized, T: Walk<M, H, V> + ?Sized> Walk<M, Thru<H>, V> for Box<T> {
+        fn walk(&self, v: &mut V) {
+            (**self).walk(v);
+        }
     }
-}
 
-// One impl per arity, fully generic in the slot types: a slot's indicator decides whether it is walked,
-// so `(Length, Line)` and `(Line, Line)` are this same impl at `(Skip, Here)` and `(Here, Here)`.
-macro_rules! walk_tuple {
-    ($(($($p:ident . $h:ident . $i:tt),+),)*) => {
-        $(
-            impl<M, V: ?Sized, $($h,)+ $($p: Walk<M, $h, V>),+> Walk<M, ($($h,)+), V> for ($($p,)+) {
-                fn walk(&self, v: &mut V) {
-                    $( self.$i.walk(v); )+
+    impl<M, H, V: ?Sized, T: WalkMut<M, H, V> + ?Sized> WalkMut<M, Thru<H>, V> for Box<T> {
+        fn walk_mut(&mut self, v: &mut V) {
+            (**self).walk_mut(v);
+        }
+    }
+
+    // One impl per arity, fully generic in the slot types: a slot's indicator decides whether it is walked,
+    // so `(Length, Line)` and `(Line, Line)` are this same impl at `(Skip, Here)` and `(Here, Here)`.
+    macro_rules! walk_tuple {
+        ($(($($p:ident . $h:ident . $i:tt),+),)*) => {
+            $(
+                impl<M, V: ?Sized, $($h,)+ $($p: Walk<M, $h, V>),+> Walk<M, ($($h,)+), V> for ($($p,)+) {
+                    fn walk(&self, v: &mut V) {
+                        $( self.$i.walk(v); )+
+                    }
                 }
-            }
-            impl<M, V: ?Sized, $($h,)+ $($p: WalkMut<M, $h, V>),+> WalkMut<M, ($($h,)+), V> for ($($p,)+) {
-                fn walk_mut(&mut self, v: &mut V) {
-                    $( self.$i.walk_mut(v); )+
+                impl<M, V: ?Sized, $($h,)+ $($p: WalkMut<M, $h, V>),+> WalkMut<M, ($($h,)+), V> for ($($p,)+) {
+                    fn walk_mut(&mut self, v: &mut V) {
+                        $( self.$i.walk_mut(v); )+
+                    }
                 }
-            }
-        )*
-    };
-}
+            )*
+        };
+    }
 
-walk_tuple! {
-    (A.HA.0),
-    (A.HA.0, B.HB.1),
-    (A.HA.0, B.HB.1, C.HC.2),
-    (A.HA.0, B.HB.1, C.HC.2, D.HD.3),
-    (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4),
-    (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5),
-    (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5, G.HG.6),
-    (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5, G.HG.6, I.HI.7),
-    (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5, G.HG.6, I.HI.7, J.HJ.8),
-    (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5, G.HG.6, I.HI.7, J.HJ.8, K.HK.9),
-    (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5, G.HG.6, I.HI.7, J.HJ.8, K.HK.9, L.HL.10),
-    (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5, G.HG.6, I.HI.7, J.HJ.8, K.HK.9, L.HL.10, N.HN.11),
+    walk_tuple! {
+        (A.HA.0),
+        (A.HA.0, B.HB.1),
+        (A.HA.0, B.HB.1, C.HC.2),
+        (A.HA.0, B.HB.1, C.HC.2, D.HD.3),
+        (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4),
+        (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5),
+        (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5, G.HG.6),
+        (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5, G.HG.6, I.HI.7),
+        (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5, G.HG.6, I.HI.7, J.HJ.8),
+        (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5, G.HG.6, I.HI.7, J.HJ.8, K.HK.9),
+        (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5, G.HG.6, I.HI.7, J.HJ.8, K.HK.9, L.HL.10),
+        (A.HA.0, B.HB.1, C.HC.2, D.HD.3, E.HE.4, F.HF.5, G.HG.6, I.HI.7, J.HJ.8, K.HK.9, L.HL.10, N.HN.11),
+    }
 }

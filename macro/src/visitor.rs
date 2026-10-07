@@ -192,7 +192,7 @@ fn intermediate_impls(
                 let (tr, f, recv) = (side.walk_trait(), side.walk_fn(), side.recv());
                 quote! {
                     impl< #(#params,)* __AstW: #{side.visit_trait()} #g_use + ?Sized >
-                        __ast_rt::#tr< #tag #targs, __ast_rt::indicator::Here, __AstW >
+                        __ast_rt::walk::#tr< #tag #targs, __ast_rt::walk::Here, __AstW >
                         for #path #own_use #where_cl
                     {
                         fn #f(#recv, this: &mut __AstW) {
@@ -233,7 +233,7 @@ fn inherited_impls(
                 let m_name = side.method(id);
                 quote! {
                     impl< #(#g_params,)* __AstW: #vt #g_use + ?Sized >
-                        __ast_rt::#tr< #tag #targs, __ast_rt::indicator::Here, __AstW > for #ty #uw
+                        __ast_rt::walk::#tr< #tag #targs, __ast_rt::walk::Here, __AstW > for #ty #uw
                     {
                         fn #f(#recv, v: &mut __AstW) {
                             // Plain method syntax: an inherited `visit_*` is reached through the

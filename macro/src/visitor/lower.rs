@@ -616,8 +616,8 @@ impl<'a> Lower<'a> {
             let (tr, f) = (self.side.walk_trait(), self.side.walk_fn());
             let tag = walk_tag();
             let targs = self.walk_tag_args;
-            let h = indicator(ty, &user_types).unwrap_or_else(|| quote!(__ast_rt::indicator::Skip));
-            quote!( __ast_rt::#tr::<#tag #targs, #h, _>::#f(#binding, this); )
+            let h = indicator(ty, &user_types).unwrap_or_else(|| quote!(__ast_rt::walk::Skip));
+            quote!( __ast_rt::walk::#tr::<#tag #targs, #h, _>::#f(#binding, this); )
         })
     }
 

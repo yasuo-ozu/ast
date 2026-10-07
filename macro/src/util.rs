@@ -203,7 +203,7 @@ impl Container {
 }
 
 /// How one wrapper level of a field descends. Both become a `Thru<_>` in the field's
-/// [`indicator`](indicator), which `visit`'s `Walk` impls peel one level at a time — the
+/// the indicator, which the `walk` module's `Walk` impls peel one level at a time — the
 /// distinction survives only because `peel` records it. `View`: a container (`Vec`/`Option`/`Box`/
 /// `Punctuated`/`HashMap`/user wrapper). `Raw`: a fixed-size array or slice. **No container type name
 /// is ever matched.**
@@ -312,7 +312,7 @@ pub(crate) fn indicator(ty: &Type, user_types: &HashSet<String>) -> Option<Token
     // `&T` a `Thru` impl like any other wrapper — so account for it here.
     match ty {
         Type::Reference(r) => {
-            return indicator(&r.elem, user_types).map(|h| quote!(__ast_rt::indicator::Thru<#h>))
+            return indicator(&r.elem, user_types).map(|h| quote!(__ast_rt::walk::Thru<#h>))
         }
         Type::Paren(p) => return indicator(&p.elem, user_types),
         Type::Group(g) => return indicator(&g.elem, user_types),
@@ -320,12 +320,12 @@ pub(crate) fn indicator(ty: &Type, user_types: &HashSet<String>) -> Option<Token
     }
     let p = peel(ty, user_types)?;
     let inner = match &p.head {
-        Head::Path { .. } => quote!(__ast_rt::indicator::Here),
+        Head::Path { .. } => quote!(__ast_rt::walk::Here),
         Head::Tuple(elems) => {
             let parts: Vec<TokenStream> = elems
                 .iter()
                 .map(|e| {
-                    indicator(e, user_types).unwrap_or_else(|| quote!(__ast_rt::indicator::Skip))
+                    indicator(e, user_types).unwrap_or_else(|| quote!(__ast_rt::walk::Skip))
                 })
                 .collect();
             quote!( ( #(#parts,)* ) )
@@ -335,7 +335,7 @@ pub(crate) fn indicator(ty: &Type, user_types: &HashSet<String>) -> Option<Token
         p.conts
             .iter()
             .rev()
-            .fold(inner, |acc, _| quote!(__ast_rt::indicator::Thru<#acc>)),
+            .fold(inner, |acc, _| quote!(__ast_rt::walk::Thru<#acc>)),
     )
 }
 
@@ -408,7 +408,7 @@ impl Side {
         Ident::new(&format!("{name}{}", self.fn_suffix()), Span::call_site())
     }
 
-    /// [`visit::Walk`] / [`WalkMut`] — the descent trait.
+    /// `walk::Walk` / `walk::WalkMut` — the descent trait.
     pub(crate) fn walk_trait(self) -> Ident {
         self.ty("Walk")
     }

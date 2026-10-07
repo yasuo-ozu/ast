@@ -419,7 +419,7 @@ pub(crate) fn gen_side(
         .map(|s| {
             quote! {
                 impl< #(for gp in &s.free_params) { #gp, } #p_v: #visit_tr #g_use #(if !struct_only) { + ?Sized } >
-                    __ast_rt::#walk_tr< #tag #tag_args, __ast_rt::indicator::Here, #p_v >
+                    __ast_rt::walk::#walk_tr< #tag #tag_args, __ast_rt::walk::Here, #p_v >
                     for #{&s.ty} #{&s.free_where}
                 {
                     fn #walk_fn(#walk_recv, v: &mut #p_v) {

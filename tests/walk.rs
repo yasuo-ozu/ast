@@ -1,4 +1,4 @@
-//! The descent goes through [`Walk`](ast::Walk): the container impls in `ast` peel the
+//! The descent goes through [`Walk`](ast::walk::Walk): the container impls in `ast` peel the
 //! wrapper layers and each visited node's generated impl bottoms out in its `visit_*` method.
 //!
 //! Each call carries an indicator computed from the field's shape, so the container impls stay generic

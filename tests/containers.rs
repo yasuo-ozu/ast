@@ -234,3 +234,142 @@ mod map_view {
         assert_eq!(total(&m), 6);
     }
 }
+
+// A container the crate has never heard of. `#[seq]` matches no container by name — it accepts any
+// field that peels to exactly one layer — so a consumer plugs its own in with three impls:
+// `SeqView` for the edit view, and `Walk`/`WalkMut` at `Thru<H>` for the descent.
+mod own_container {
+    use ast::walk::{Thru, Walk, WalkMut};
+    use ast::{Ast, SeqView};
+
+    pub struct Punctuated<T, P>(Vec<T>, core::marker::PhantomData<P>);
+
+    impl<T, P> Punctuated<T, P> {
+        fn new(items: Vec<T>) -> Self {
+            Punctuated(items, core::marker::PhantomData)
+        }
+    }
+
+    impl<T, P> SeqView<T> for Punctuated<T, P> {
+        fn len(&self) -> usize {
+            self.0.len()
+        }
+        fn get(&self, i: usize) -> Option<&T> {
+            self.0.get(i)
+        }
+        fn get_mut(&mut self, i: usize) -> Option<&mut T> {
+            self.0.get_mut(i)
+        }
+        fn insert(&mut self, i: usize, value: T) {
+            self.0.insert(i, value)
+        }
+        fn remove(&mut self, i: usize) -> T {
+            self.0.remove(i)
+        }
+    }
+
+    impl<M, H, V: ?Sized, T: Walk<M, H, V>, P> Walk<M, Thru<H>, V> for Punctuated<T, P> {
+        fn walk(&self, v: &mut V) {
+            for x in &self.0 {
+                x.walk(v);
+            }
+        }
+    }
+    impl<M, H, V: ?Sized, T: WalkMut<M, H, V>, P> WalkMut<M, Thru<H>, V> for Punctuated<T, P> {
+        fn walk_mut(&mut self, v: &mut V) {
+            for x in &mut self.0 {
+                x.walk_mut(v);
+            }
+        }
+    }
+
+    #[derive(Ast)]
+    pub struct Item(pub u32);
+
+    #[derive(Ast)]
+    #[subast(crate::own_container::Item)]
+    pub struct Doc {
+        #[seq]
+        pub items: Punctuated<Item, char>,
+    }
+
+    pub mod v {
+        ast::visitor!(super::Item, super::Doc);
+    }
+
+    #[test]
+    fn a_consumer_container_is_walked() {
+        let d = Doc {
+            items: Punctuated::new(vec![Item(1), Item(2), Item(3)]),
+        };
+        let mut seen = Vec::new();
+        d.visit(|i: &Item| seen.push(i.0));
+        assert_eq!(seen, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn a_consumer_container_takes_a_seq_edit() {
+        struct DropOdd;
+        impl v::VisitMut for DropOdd {
+            fn visit_item_seq_mut<S: SeqView<Item>>(&mut self, s: &mut S) {
+                s.retain_mut(|i| i.0 % 2 == 0);
+            }
+        }
+
+        let mut d = Doc {
+            items: Punctuated::new(vec![Item(1), Item(2), Item(3), Item(4)]),
+        };
+        d.visit_mut(&mut DropOdd);
+        let mut left = Vec::new();
+        d.visit(|i: &Item| left.push(i.0));
+        assert_eq!(
+            left,
+            vec![2, 4],
+            "the view edited a container `ast` never names"
+        );
+    }
+}
+
+// `Vec` is the container every other test reaches for. These are the walk targets that nothing
+// else exercises: a `VecDeque`, a fixed-size array and a slice behind a reference.
+mod other_shapes {
+    use ast::Ast;
+    use std::collections::VecDeque;
+
+    #[derive(Ast)]
+    pub struct Leaf(pub u32);
+
+    #[derive(Ast)]
+    #[subast(crate::other_shapes::Leaf)]
+    pub struct Holder {
+        pub deque: VecDeque<Leaf>,
+        pub array: [Leaf; 3],
+    }
+
+    pub mod v {
+        ast::visitor!(super::Leaf, super::Holder);
+    }
+
+    fn sample() -> Holder {
+        Holder {
+            deque: VecDeque::from(vec![Leaf(1), Leaf(2)]),
+            array: [Leaf(3), Leaf(4), Leaf(5)],
+        }
+    }
+
+    #[test]
+    fn a_deque_and_an_array_are_both_walked() {
+        let mut seen = Vec::new();
+        sample().visit(|l: &Leaf| seen.push(l.0));
+        assert_eq!(seen, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn a_deque_and_an_array_are_walked_mutably() {
+        let mut h = sample();
+        h.visit_mut(|l: &mut Leaf| l.0 *= 2);
+        let mut seen = Vec::new();
+        h.visit(|l: &Leaf| seen.push(l.0));
+        assert_eq!(seen, vec![2, 4, 6, 8, 10]);
+    }
+}

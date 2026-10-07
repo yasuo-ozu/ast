@@ -7,6 +7,8 @@ description = "Proc macros for the `ast` crate"
 license = "MIT"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
 repository = "https://github.com/yasuo-ozu/ast"
+keywords = ["ast", "visitor", "syntax-tree", "derive", "proc-macro"]
+categories = ["development-tools::procedural-macro-helpers", "parsing"]
 
 [lib]
 proc-macro = true

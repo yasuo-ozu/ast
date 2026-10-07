@@ -50,16 +50,23 @@ pub(crate) fn check_last_segment_collisions(visited: &[Path]) {
         let seg = last_ident(p).to_string();
         let np = norm_path(p);
         if let Some(prev) = seen.insert(seg.clone(), np.clone()) {
-            if prev != np {
+            if prev == np {
+                // The same type twice. Every item it names would be emitted twice, so without this
+                // the user reads `E0428` about `__ast_ty_*`/`visit_*` — names they never wrote.
                 abort!(
                     p,
-                    "two visited types share the last segment `{}` (`{}` vs `{}`); their generated \
-                     `visit_*`/`*Hook` names would collide — give them distinct final idents",
-                    seg,
-                    prev,
+                    "`{}` is listed twice in this visitor; each visited type is named once",
                     np
                 );
             }
+            abort!(
+                p,
+                "two visited types share the last segment `{}` (`{}` vs `{}`); their generated \
+                 `visit_*`/`*Hook` names would collide — give them distinct final idents",
+                seg,
+                prev,
+                np
+            );
         }
     }
 }

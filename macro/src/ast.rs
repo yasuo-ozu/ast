@@ -1,9 +1,10 @@
 use crate::util::{angle, data_field_iter, for_each_type_path, gargs, gparams, to_snake};
 use proc_macro2::{Literal, Span, TokenStream};
-use proc_macro_error::{emit_error, emit_warning};
+use proc_macro_error::{abort, emit_error, emit_warning};
 use std::collections::{HashMap, HashSet};
 use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::*;
 use template_quote::quote;
 use type_leak::Leaker;
@@ -276,6 +277,16 @@ pub fn derive_ast(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStream {
     let ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
+    // A union has no fields a walk could enter, and nothing downstream handles one: accepting it
+    // here only defers the complaint to `visitor!`, which would report "no AST definitions
+    // resolved" — a sentence about the visitor, for a mistake in the derive.
+    if let syn::Data::Union(_) = &input.data {
+        abort!(
+            ident,
+            "`#[derive(Ast)]` works on a struct or an enum; a union has no walkable fields"
+        );
+    }
+
     check_ambiguous_last_idents(input);
     let subast = parse_subast(&input.attrs);
     let field_heads = field_head_idents(input);
@@ -325,9 +336,54 @@ pub fn derive_ast(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStream {
         quote!()
     };
 
+    // Every `#[subast]` entry must itself be a node. Without this the omission surfaces only when a
+    // `visitor!` tries to expand the entry's metadata macro, as `cannot find `X` in `$crate`` — a
+    // message about a macro the user never wrote, in a module far from the attribute at fault.
+    //
+    // The bound names the matching FIELD's type, not the `#[subast]` path: an entry is written bare
+    // (`crate::Expr`, a matchkey), while the field spells the arguments (`Expr<S>`). Those live in
+    // the node's own generics, so the check is a generic fn that is never called.
+    let subast_are_nodes: Vec<TokenStream> = subast
+        .iter()
+        .filter_map(|e| {
+            let key = e.matchkey().to_string();
+            let mut found: Option<TypePath> = None;
+            for_each_field_type_of(&input.data, &mut |ty| {
+                for_each_type_path(ty, &mut |tp| {
+                    if found.is_none()
+                        && tp
+                            .path
+                            .segments
+                            .last()
+                            .map(|s| s.ident.to_string())
+                            .as_deref()
+                            == Some(key.as_str())
+                    {
+                        found = Some(tp.clone());
+                    }
+                })
+            });
+            // No matching field: `parse_subast`'s own warning already covers that case.
+            let tp = found?;
+            let span = e.path.span();
+            Some(quote! {
+                const _: () = {
+                    fn #{Ident::new("__ast_subast_entry_is_a_node", span)}
+                        #impl_generics () #where_clause
+                    {
+                        fn assert_node<__AstT: ?Sized + #root::visit::Ast>() {}
+                        let _ = assert_node::<#tp>;
+                    }
+                };
+            })
+        })
+        .collect();
+
     quote! {
         #[automatically_derived]
         impl #impl_generics #root::visit::Ast for #ident #ty_generics #where_clause {}
+
+        #(#subast_are_nodes)*
 
         #repeater_items
 

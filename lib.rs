@@ -26,7 +26,11 @@ pub mod _imp {
 /// allowed, so the alias needs a module to point at.
 #[doc(hidden)]
 pub mod visit {
-    pub use super::*;
+    // Named one by one rather than re-exported with a glob: a glob would also carry `visit` itself
+    // (making `ast::visit::visit::visit::…` a valid path) and `_imp`. This is the whole surface the
+    // generated code reaches — `#root::visit::{Ast, Repeater}` from the derive, `__ast_rt::{..}`
+    // from `visitor!`.
+    pub use super::{visitor, walk, Ast, MapView, OptView, Repeater, SeqIter, SeqIterMut, SeqView};
 }
 
 /// Marks a type as an AST node and emits the metadata [`visitor!`] reads.
@@ -360,6 +364,14 @@ macro_rules! visitor {
 ///
 /// It carries no methods; its only purpose is to let generic code (and the `#[visitor]` generator)
 /// bound on "is an AST node".
+#[cfg_attr(
+    has_diagnostic,
+    diagnostic::on_unimplemented(
+        message = "`{Self}` is not an AST node",
+        label = "not an AST node",
+        note = "add `#[derive(Ast)]` to `{Self}`; every `#[subast(..)]` entry has to be one"
+    )
+)]
 pub trait Ast {}
 
 /// `type-leak` repeater: passes a single type out of the leaker's type context to a referrer.
@@ -378,15 +390,16 @@ pub trait Repeater<const INDEX: usize> {
 // a **view of that slot** as an argument, through which the visitor edits the parent **in place** (no
 // cloning of existing nodes). The view is a trait implemented directly on the container types — so the
 // descent passes `&mut self.field` with no wrapper. Two are edit targets: [`SeqView`] (Vec-like,
-// unbounded) and [`OptView`] (Option-like, ≤1). Two are descent-only: [`MapView`], because a map holds
+// unbounded) and [`OptView`] (Option-like, ≤1). One is descent-only: [`MapView`], because a map holds
 // the node in its VALUE slot, which no positional view can address.
 //
 // These are **edit** views only: the descent itself goes through [`walk::Walk`]. The element type is a
 // **type parameter** (`SeqView<T>`, not an associated type), and the traits are bare-element — a
 // `#[seq]`/`#[opt]` field must be a bare `Vec<T>`/`Option<T>`, never a wrapped one.
 
-/// A mutable, **sequence-like** view of an AST collection field (`Vec`/`VecDeque`/`Punctuated`),
-/// bare-element — the element type is `T` itself, never a wrapped `Box<T>`. A generated
+/// A mutable, **sequence-like** view of an AST collection field (`Vec`, `VecDeque`, or a container
+/// of your own — implement this trait for it and `#[seq]` accepts it, since no container name is
+/// ever matched). Bare-element — the element type is `T` itself, never a wrapped `Box<T>`. A generated
 /// `visit_<t>_seq_mut(&mut self, &mut impl SeqView<T>)` receives one (and `visit_<t>_seq` a `&`); override it to edit the collection in
 /// place. The required core (`len`/`get`/`get_mut`/`insert`/`remove`) is object-safe; the ergonomic
 /// helpers are `Self: Sized` provided methods.
@@ -560,7 +573,7 @@ impl<'a, K: 'a, V: 'a> MapView<'a, V> for std::collections::BTreeMap<K, V> {
 }
 
 /// A mutable, **Option-like** view (≤1 element) of an AST `Option` field, bare-element (a nested
-/// `Box`/`Attempt` layer descends separately, through [`walk::Walk`]). A generated
+/// `Box`-like layer descends separately, through [`walk::Walk`]). A generated
 /// `visit_<t>_opt_mut(&mut self, &mut impl OptView<T>)` receives one, and `visit_<t>_opt` a `&`.
 pub trait OptView<T> {
     fn is_some(&self) -> bool;
@@ -589,7 +602,7 @@ pub trait OptView<T> {
 }
 
 // `SeqView`/`OptView` are **bare-element**: the container holds the viewed node `T` directly (no element
-// adapter). A transparent single-slot wrapper (`Box<T>`/`Attempt<T>`/user wrappers) is reached by
+// adapter). A transparent single-slot wrapper (`Box<T>` and user wrappers) is reached by
 // [`walk::Walk`] instead. Such a slot can be neither emptied nor filled, so it is descent-only — never a
 // `#[seq]`/`#[opt]` edit target.
 

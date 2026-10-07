@@ -1,0 +1,15 @@
+error[E0277]: `Plain<S>` is not an AST node
+  --> tests/ui/subast_entry_not_a_node.rs:12:12
+   |
+12 |     pub p: Plain<S>,
+   |            ^^^^^^^^ not an AST node
+   |
+   = help: the trait `Ast` is not implemented for `Plain<S>`
+   = note: add `#[derive(Ast)]` to `Plain<S>`; every `#[subast(..)]` entry has to be one
+   = help: the trait `Ast` is implemented for `Node<S>`
+note: required by a bound in `assert_node`
+  --> tests/ui/subast_entry_not_a_node.rs:9:10
+   |
+ 9 | #[derive(Ast)]
+   |          ^^^ required by this bound in `assert_node`
+   = note: this error originates in the derive macro `Ast` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -39,7 +39,7 @@ fn crate_path(attrs: &[Attribute]) -> Path {
 
 /// Derive `Ast` — mark a type as a node, and record the metadata a visitor walks it by.
 ///
-/// See `ast::visit::Ast` for the attributes (`#[subast]`, `#[seq]`, `#[opt]`, `#[skip]`).
+/// See `ast::Ast` for the attributes (`#[subast]`, `#[seq]`, `#[opt]`, `#[skip]`).
 #[proc_macro_error]
 #[proc_macro_derive(Ast, attributes(ast, subast, seq, opt, skip))]
 pub fn ast_derive(input: TokenStream1) -> TokenStream1 {

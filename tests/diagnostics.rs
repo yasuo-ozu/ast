@@ -27,6 +27,14 @@ fn diagnostics() {
     t.compile_fail("tests/ui/edit_seq_inherited.rs");
     // `use <visitor module>::*;` carries the traits and the free fns, never the chain machinery.
     t.compile_fail("tests/ui/glob_import_hides_chain.rs");
+    // The same type listed twice — one clean error, not an `E0428` cascade on generated names.
+    t.compile_fail("tests/ui/visited_listed_twice.rs");
+    // A `#[subast]` entry that is not itself a node — caught at the derive, by the field's type.
+    t.compile_fail("tests/ui/subast_entry_not_a_node.rs");
+    // `#[derive(Ast)]` on a union.
+    t.compile_fail("tests/ui/derive_ast_on_a_union.rs");
+    // `impl_chain!` given a method no ancestor declares.
+    t.compile_fail("tests/ui/impl_chain_unknown_method.rs");
     // Marker on a non-viewable / container-less / non-visited field → clean abort, not a cryptic trait error.
     t.compile_fail("tests/ui/edit_marker_array.rs");
     t.compile_fail("tests/ui/edit_marker_noncontainer.rs");

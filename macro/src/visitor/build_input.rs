@@ -401,7 +401,8 @@ pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> To
             ($($vm:ident)::+; $(#[$at:meta])* fn $other:ident $($rest:tt)*) => {
                 ::core::compile_error!(::core::concat!(
                     "`", ::core::stringify!($other),
-                    "` is not a method of any visitor this one extends; a method of its own trait                      belongs in your `impl Visit`, not in `impl_chain!`"
+                    "` is not a method of any visitor this one extends; \
+                     a method of its own trait belongs in your `impl Visit`"
                 ));
             };
             ($($vm:ident)::+;) => {};

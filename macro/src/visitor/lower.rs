@@ -562,7 +562,7 @@ impl<'a> Lower<'a> {
                     [_] => abort!(
                         ty,
                         "a `#[{}]` field's container is an array/slice — not structurally editable; use \
-                         `Vec`/`VecDeque`/`Punctuated`/`Option`",
+                         `Vec`/`VecDeque`/`Option`, or any container implementing `SeqView`/`OptView`",
                         marker
                     ),
                     _ => abort!(

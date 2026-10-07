@@ -1,4 +1,4 @@
-error: a `#[seq]` field's container is an array/slice — not structurally editable; use `Vec`/`VecDeque`/`Punctuated`/`Option`
+error: a `#[seq]` field's container is an array/slice — not structurally editable; use `Vec`/`VecDeque`/`Option`, or any container implementing `SeqView`/`OptView`
   --> tests/ui/edit_marker_array.rs:15:16
    |
 15 |     pub items: [Leaf<S>; 3],

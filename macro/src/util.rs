@@ -324,9 +324,7 @@ pub(crate) fn indicator(ty: &Type, user_types: &HashSet<String>) -> Option<Token
         Head::Tuple(elems) => {
             let parts: Vec<TokenStream> = elems
                 .iter()
-                .map(|e| {
-                    indicator(e, user_types).unwrap_or_else(|| quote!(__ast_rt::walk::Skip))
-                })
+                .map(|e| indicator(e, user_types).unwrap_or_else(|| quote!(__ast_rt::walk::Skip)))
                 .collect();
             quote!( ( #(#parts,)* ) )
         }

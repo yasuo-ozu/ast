@@ -2,6 +2,7 @@
 name = "ast"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.85"
 description = "Walk a derived syntax tree: the Ast derive and the visitor! generator"
 license = "MIT"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]

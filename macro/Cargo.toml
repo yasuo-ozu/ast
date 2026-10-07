@@ -2,6 +2,7 @@
 name = "ast-macro"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.85"
 description = "Proc macros for the `ast` crate"
 license = "MIT"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]

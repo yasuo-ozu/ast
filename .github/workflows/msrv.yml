@@ -1,0 +1,39 @@
+name: MSRV
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  msrv:
+    name: Build on the declared MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve rust-version
+        id: msrv
+        run: |
+          root=$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)
+          macro=$(grep -m1 '^rust-version' macro/Cargo.toml | cut -d'"' -f2)
+          if [ "$root" != "$macro" ]; then
+            echo "::error::rust-version differs: root=$root macro=$macro"
+            exit 1
+          fi
+          echo "version=$root" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust ${{ steps.msrv.outputs.version }}
+        run: |
+          rustup toolchain install ${{ steps.msrv.outputs.version }} --profile minimal --no-self-update
+          rustup default ${{ steps.msrv.outputs.version }}
+          rustc --version
+
+      # `check`, never `test`: dev-dependencies carry higher MSRVs, and the
+      # trybuild fixtures compare rustc diagnostics whose wording drifts by release.
+      - name: Check
+        run: cargo check --workspace

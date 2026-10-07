@@ -26,7 +26,6 @@ pub(crate) fn gen_side(
     // `for<T>` generic, so the closure machinery (`&mut V` blanket / `Driver`/`Hook`/`Chain`/
     // `IntoVisitor`) is omitted and the inherent `.visit()` takes `&mut impl Visit` directly.
     let struct_only = m.method_mode;
-    let id = |s: &str| Ident::new(s, Span::call_site());
     let visit_tr = side.visit_trait();
     let into_vis_tr = side.ty("IntoVisitor");
     let into_hook_tr = side.ty("__AstIntoHook");
@@ -400,33 +399,12 @@ pub(crate) fn gen_side(
     );
 
     // A boxed visitor is a visitor, so `node.visit(Box::new(pass))` works. Written for `Box`
-    // specifically rather than blanketed over a wrapper trait: such a blanket would overlap the tuple
-    // impls below, since this crate is upstream of the generated module and could later implement that
-    // trait for a tuple.
+    // specifically rather than blanketed over a wrapper trait, which a consumer could then implement
+    // for a type this crate also covers.
     let boxed_visitor_impl = forwarding_impl(
         quote!( impl< #(#g_params,)* #p_v: #visit_tr #g_use + ?Sized > #visit_tr #g_use for ::std::boxed::Box<#p_v> ),
         vec![(quote!(#p_v), quote!(&mut **self))],
     );
-
-    // A tuple of visitors is a visitor: every element sees every node, in one traversal. Arity 2..=8,
-    // mirroring the closure-tuple `IntoVisitor` impls.
-    let tuple_visit_impls: Vec<TokenStream> = (2..=8usize)
-        .map(|n| {
-            let ps: Vec<Ident> = (0..n).map(|k| id(&format!("__AstV{k}"))).collect();
-            let delegates = ps
-                .iter()
-                .enumerate()
-                .map(|(k, p)| {
-                    let k = syn::Index::from(k);
-                    (quote!(#p), quote!(&mut self.#k))
-                })
-                .collect();
-            forwarding_impl(
-                quote!( impl< #(#g_params,)* #(for p in &ps) { #p: #visit_tr #g_use, } > #visit_tr #g_use for ( #(#ps,)* ) ),
-                delegates,
-            )
-        })
-        .collect();
 
     // Each visited node implements `Walk`/`WalkMut` by handing itself to the visitor. Unconditional
     // (no `FieldTy: Walk` predicates): those belong on the free fns, and putting them here makes a
@@ -701,7 +679,6 @@ pub(crate) fn gen_side(
         #(for imp in &walk_impls) { #imp }
         #blanket_ref_impl
         #boxed_visitor_impl
-        #(for imp in &tuple_visit_impls) { #imp }
         #free_fns
         #closure_machinery
         // Inherent entry points (no trait import needed at the call site).

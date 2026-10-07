@@ -1,8 +1,9 @@
-//! Several visitors in one traversal, and a visitor reached through a wrapper.
+//! A visitor reached through a wrapper, and several closures in one traversal.
 //!
-//! A tuple of visitors implements the generated `Visit`/`VisitMut` directly, so it composes and can be
-//! passed wherever one visitor can. So does a `Box` around a visitor, so `node.visit(Box::new(pass))`
-//! works without unwrapping; a consumer's own wrapper writes the same one-line forwarding impl.
+//! A `Box` around a visitor is a visitor, so `node.visit(Box::new(pass))` works without unwrapping;
+//! a consumer's own wrapper writes the same one-line forwarding impl. A tuple is a visitor only
+//! when every element is a closure — those fold into one hook, and so into one walk. Two struct
+//! passes are two walks, written as two calls.
 #![allow(dead_code)]
 
 mod ast {
@@ -50,21 +51,12 @@ impl ast::v::Visit for Sum {
 }
 
 #[test]
-fn a_tuple_of_visitors_is_a_visitor() {
-    let mut both = (Count::default(), Sum::default());
-    sample().visit(&mut both);
-    assert_eq!(
-        (both.0 .0, both.1 .0),
-        (3, 6),
-        "one traversal, both visitors"
-    );
-}
-
-#[test]
-fn tuples_nest_and_reach_higher_arities() {
-    let mut three = (Count::default(), Sum::default(), Count::default());
-    sample().visit(&mut three);
-    assert_eq!((three.0 .0, three.1 .0, three.2 .0), (3, 6, 3));
+fn two_visitors_are_two_walks() {
+    let (mut count, mut sum) = (Count::default(), Sum::default());
+    let t = sample();
+    t.visit(&mut count);
+    t.visit(&mut sum);
+    assert_eq!((count.0, sum.0), (3, 6));
 }
 
 /// `visit` takes the visitor by value, so a wrapper is moved in — the tally comes back through a
@@ -97,6 +89,24 @@ fn a_consumer_wrapper_forwarding_to_a_visitor_works() {
     assert_eq!(n, 3);
 }
 
+// The point of folding a tuple of closures into one hook: both run at each node, in tuple order,
+// before the walk moves on. Counting callbacks cannot tell that apart from two separate walks —
+// only the ORDER can, so this records it. `ababab` is one walk; `aaabbb` would be two.
+#[test]
+fn a_tuple_of_closures_interleaves_at_each_node() {
+    use core::cell::RefCell;
+    let order = RefCell::new(String::new());
+    sample().visit((
+        |_: &Node| order.borrow_mut().push('a'),
+        |_: &Node| order.borrow_mut().push('b'),
+    ));
+    assert_eq!(
+        order.into_inner(),
+        "ababab",
+        "both closures at each of the three nodes, not one closure's whole traversal and then the other's"
+    );
+}
+
 #[test]
 fn closures_and_tuples_of_closures_still_work() {
     let (mut n, mut total) = (0usize, 0i64);
@@ -111,7 +121,7 @@ fn closures_and_tuples_of_closures_still_work() {
 }
 
 #[test]
-fn a_tuple_of_visitors_edits_in_place() {
+fn two_edit_passes_run_in_order() {
     struct Double;
     impl ast::v::VisitMut for Double {
         fn visit_node_mut(&mut self, n: &mut Node) {
@@ -128,13 +138,14 @@ fn a_tuple_of_visitors_edits_in_place() {
     }
 
     let mut t = sample();
-    t.visit_mut(&mut (Double, Bump));
+    t.visit_mut(&mut Double);
+    t.visit_mut(&mut Bump);
     let mut got = Vec::new();
     t.visit(|n: &Node| {
         let Node::Leaf(x) = n;
         got.push(*x);
     });
-    assert_eq!(got, vec![3, 5, 7], "Double then Bump, per node");
+    assert_eq!(got, vec![3, 5, 7], "Double over the whole tree, then Bump");
 }
 
 // A `use path::to::visit::*;` must bring in the public API and nothing else. The closure adapters,

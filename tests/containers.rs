@@ -175,3 +175,62 @@ mod tuple_field {
         );
     }
 }
+
+// `MapView` is the hand-written-traversal view for a map field: the node sits in the VALUE slot, so
+// there is no positional edit and nothing `visitor!` generates calls it. Its two iterators are the
+// map's own `Values`/`ValuesMut` — named as associated types, with the borrow a parameter of the
+// trait, so neither is boxed.
+mod map_view {
+    use ast::MapView;
+    use std::collections::{BTreeMap, HashMap};
+
+    #[derive(Debug, PartialEq)]
+    struct Node(i64);
+
+    fn pairs() -> [(&'static str, Node); 3] {
+        [("a", Node(1)), ("b", Node(2)), ("c", Node(3))]
+    }
+
+    #[test]
+    fn btree_map_reads_and_edits_its_values() {
+        let mut m: BTreeMap<&str, Node> = pairs().into_iter().collect();
+
+        let mut seen: Vec<i64> = m.view_iter().map(|n| n.0).collect();
+        seen.sort_unstable();
+        assert_eq!(seen, vec![1, 2, 3]);
+
+        for n in m.view_iter_mut() {
+            n.0 *= 10;
+        }
+        assert_eq!(m["a"], Node(10));
+        assert_eq!(m["c"], Node(30));
+    }
+
+    #[test]
+    fn hash_map_reads_and_edits_its_values() {
+        let mut m: HashMap<&str, Node> = pairs().into_iter().collect();
+
+        let mut seen: Vec<i64> = m.view_iter().map(|n| n.0).collect();
+        seen.sort_unstable();
+        assert_eq!(seen, vec![1, 2, 3]);
+
+        for n in m.view_iter_mut() {
+            n.0 += 1;
+        }
+        let mut seen: Vec<i64> = m.view_iter().map(|n| n.0).collect();
+        seen.sort_unstable();
+        assert_eq!(seen, vec![2, 3, 4]);
+    }
+
+    // A caller generic over the trait: the iterators come back as associated types, so this needs
+    // no `Box` and no `dyn`.
+    fn total<'a, M: MapView<'a, Node>>(m: &'a M) -> i64 {
+        m.view_iter().map(|n| n.0).sum()
+    }
+
+    #[test]
+    fn a_generic_caller_names_the_iterator_as_an_associated_type() {
+        let m: BTreeMap<&str, Node> = pairs().into_iter().collect();
+        assert_eq!(total(&m), 6);
+    }
+}

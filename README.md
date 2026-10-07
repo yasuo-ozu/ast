@@ -70,9 +70,9 @@ fn main() {
 }
 ```
 
-`visit_mut` is the same with `&mut`. A tuple of two to eight runs several at once: closures are
-folded into a single walk, visitors each walk the tree. A tuple holds one kind or the other — to mix,
-convert the closure first with `closure.into_visitor()`.
+`visit_mut` is the same with `&mut`. A tuple of two to eight *closures* runs them all in a single
+walk; a visitor cannot join that tuple, because folding into one hook is what makes the single walk
+possible. Two visitors are two walks, written as two calls.
 
 ## Editing a list
 
@@ -151,8 +151,8 @@ fn main() {
 ```
 
 `base::Visit` becomes a supertrait of `ext::Visit`, so a pass written against the base still runs in
-the extended walk. `ext::impl_chain!(ext; MyPass)` writes the ancestor impls that otherwise have to
-be spelled out.
+the extended walk. A visitor implements every trait in the chain; the ancestors it does not touch
+take an empty impl.
 
 ## Using it through another crate
 

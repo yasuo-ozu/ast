@@ -132,14 +132,14 @@ fn an_ancestors_own_entry_point() {
     assert_eq!((a, b, c), (1, 1, 1));
 }
 
-// Struct passes: by `&mut`, boxed, tupled, and written against a level other than the entry's.
+// Struct passes: by `&mut`, boxed, and written against a level other than the entry's.
 
 #[derive(Default)]
 struct Counts {
     items: u32,
     types: u32,
 }
-top::impl_chain! { top; Counts;
+top::__ast_chain::impl_chain! { top; Counts;
     fn visit_type(&mut self, i) { self.types += 1; base::visit_type(self, i); }
 }
 impl<S> top::Visit<S> for Counts {
@@ -163,13 +163,6 @@ fn boxed() {
     assert_eq!((b.items, b.types), (1, 1));
 }
 
-#[test]
-fn tuple_of_visitors() {
-    let mut pair = (Counts::default(), Counts::default());
-    sample().visit(&mut pair);
-    assert_eq!((pair.0.items, pair.1.types), (1, 1));
-}
-
 // A pass that knows only the base still fires from the extended entry point.
 #[derive(Default)]
 struct BaseOnly {
@@ -182,7 +175,7 @@ impl<S> base::Visit<S> for BaseOnly {
     }
 }
 impl<S> base::VisitMut<S> for BaseOnly {}
-top::impl_chain! { top; BaseOnly; fn visit_type; }
+top::__ast_chain::impl_chain! { top; BaseOnly; fn visit_type; }
 impl<S> top::Visit<S> for BaseOnly {}
 
 #[test]
@@ -192,39 +185,27 @@ fn a_base_level_pass_in_the_extended_walk() {
     assert_eq!(p.types, 1);
 }
 
+// Only a tuple of CLOSURES is a visitor — they fold into one hook, which is what makes the single
+// walk possible. Two struct passes are two walks, written out as two calls.
 #[test]
-fn passes_from_different_levels_in_one_tuple() {
-    let mut pair = (BaseOnly::default(), Counts::default());
-    sample().visit(&mut pair);
-    assert_eq!((pair.0.types, pair.1.items), (1, 1));
+fn passes_from_different_levels_run_one_after_the_other() {
+    let (mut base_level, mut ext_level) = (BaseOnly::default(), Counts::default());
+    sample().visit(&mut base_level);
+    sample().visit(&mut ext_level);
+    assert_eq!((base_level.types, ext_level.items), (1, 1));
 }
 
-// A tuple is all closures or all visitors, because a tuple of closures is folded into one hook and
-// walked once — a visitor cannot join that, since it descends on its own. To mix, turn the closure
-// into a visitor first; the result is a tuple of visitors, which walks once per element.
-
+// `into_visitor` turns a closure into a standalone visitor value, which then goes wherever a
+// visitor goes.
 #[test]
-fn a_converted_closure_sits_in_a_tuple_of_visitors() {
+fn a_converted_closure_is_a_visitor() {
     use top::IntoVisitor;
     let mut n = 0;
-    let mut c = Counts::default();
     {
-        let closure = (|_: &Type<()>| n += 1).into_visitor();
-        sample().visit(&mut (closure, &mut c));
+        let mut closure = (|_: &Type<()>| n += 1).into_visitor();
+        sample().visit(&mut closure);
     }
-    assert_eq!((n, c.items), (1, 1));
-}
-
-#[test]
-fn three_passes_of_mixed_origin() {
-    use top::IntoVisitor;
-    let mut n = 0;
-    let (mut a, mut b) = (Counts::default(), BaseOnly::default());
-    {
-        let closure = (|_: &Stmt<()>| n += 1).into_visitor();
-        sample().visit(&mut (closure, &mut a, &mut b));
-    }
-    assert_eq!((n, a.items, b.types), (1, 1, 1));
+    assert_eq!(n, 1);
 }
 
 // A tuple of closures is folded into one hook and walked once — the callbacks interleave per node

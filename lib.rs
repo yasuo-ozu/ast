@@ -94,23 +94,73 @@ pub use ast_macro::Ast;
 /// Everything it writes comes twice: once for reading, and once for editing, under a `_mut` name
 /// that takes `&mut` where the reading half takes `&`.
 ///
-/// # What you get
+/// # What it expands to
 ///
-/// | item | what it is |
-/// |---|---|
-/// | `trait Visit` | one `visit_<node>` method per listed type. Each one already walks that node's children, so you override only the nodes you care about. |
-/// | `fn visit_<node>` | that walk, on its own. Call it from your override to keep descending; leave it out to prune. |
-/// | `trait IntoVisitor` | what `node.visit(..)` takes — see [What `visit` takes](#what-visit-takes). |
-/// | `node.visit(..)` | an inherent method on every listed type: where a walk starts. |
-/// | `impl_chain!` | writes the ancestor impls an extending visitor needs — see [Extending a visitor](#extending-a-visitor). |
+/// Take a `Doc` holding a list of `Item`s:
 ///
-/// The editing half is `VisitMut`, `visit_<node>_mut`, `IntoVisitorMut` and `node.visit_mut(..)`.
-/// A `#[seq]` or `#[opt]` field adds two more methods, below. Everything else in the module is
-/// hidden, named with an `__ast` prefix, and kept where `use path::to::visit::*;` will not reach
-/// it.
+/// ```ignore
+/// #[derive(Ast)]
+/// pub struct Doc { #[seq] items: Vec<Item> }
 ///
-/// `node.visit(..)` needs no import. Implementing `Visit` does, and so does calling
+/// #[derive(Ast)]
+/// pub struct Item(u32);
+///
+/// pub mod visit { ast::visitor!(crate::Doc, crate::Item); }
+/// ```
+///
+/// The module is about a thousand lines. In outline it is this:
+///
+/// ```ignore
+/// // One method per listed type, each defaulted to the walk below. Implement it to act.
+/// pub trait Visit {
+///     fn visit_doc(&mut self, i: &Doc) { visit_doc(self, i) }
+///     fn visit_item(&mut self, i: &Item) { visit_item(self, i) }
+///
+///     // Only because a field is marked `#[seq]`. It takes the list, not an element.
+///     fn visit_item_seq<V: SeqView<Item>>(&mut self, v: &V) {
+///         for e in v.view_iter() { self.visit_item(e); }
+///     }
+/// }
+///
+/// // The walk for one node, on its own. Call it from an override to keep descending;
+/// // leave it out to prune.
+/// pub fn visit_doc<V: Visit + ?Sized>(this: &mut V, i: &Doc) {
+///     this.visit_item_seq(&i.items);
+/// }
+///
+/// // Empty: a `u32` is not a visited type, so there is nothing inside an `Item` to walk into.
+/// pub fn visit_item<V: Visit + ?Sized>(this: &mut V, i: &Item) {}
+///
+/// // What `node.visit(..)` takes. The conversions behind it are hidden.
+/// pub trait IntoVisitor<T> { .. }
+///
+/// // The entry point, inherent on each listed type — so a walk needs no import, and may start
+/// // at any node. It returns `self`, so calls chain.
+/// impl Doc {
+///     pub fn visit<T>(&self, visitor: impl IntoVisitor<T>) -> &Self {
+///         let mut visitor = visitor.into_visitor();
+///         visitor.visit_doc(self);
+///         self
+///     }
+///     pub fn visit_mut<T>(&mut self, visitor: impl IntoVisitorMut<T>) -> &mut Self { .. }
+/// }
+///
+/// impl Item {
+///     pub fn visit<T>(&self, visitor: impl IntoVisitor<T>) -> &Self { .. }
+///     pub fn visit_mut<T>(&mut self, visitor: impl IntoVisitorMut<T>) -> &mut Self { .. }
+/// }
+///
+/// // ...and all of the above again for editing: `VisitMut`, `visit_doc_mut`,
+/// // `visit_item_seq_mut`, `IntoVisitorMut`, each `&` become `&mut`. That is how a view edits
+/// // the list instead of only reading it.
+/// ```
+///
+/// So `doc.visit(..)` needs nothing in scope. Implementing `Visit` does, and so does calling
 /// `into_visitor`.
+///
+/// That is the whole public surface. The impls behind it — a visitor by `&mut` or in a `Box`, the
+/// adapters that make a closure one, the machinery an extending visitor needs — are hidden, named
+/// with an `__ast` prefix, and kept where `use path::to::visit::*;` does not reach them.
 ///
 /// # Using it
 ///
@@ -177,13 +227,12 @@ pub use ast_macro::Ast;
 /// # What `visit` takes
 ///
 /// `node.visit(..)` takes anything that implements `IntoVisitor`, which the macro implements for
-/// five things:
+/// four things:
 ///
 /// * **a visitor** — any type implementing `Visit`, by value or by `&mut`.
 /// * **a closure** taking `&T`, for any type the visitor reaches — one it lists, or one it
 ///   inherits. The argument type picks the node; the closure runs for every `T` in the tree.
 /// * **a tuple of 2 to 8 closures**, folded into one hook, so all of them run in a single walk.
-/// * **a tuple of 2 to 8 visitors**. Each walks the tree itself, so each sees every node.
 /// * **a `Box` around a visitor**, by value.
 ///
 /// ```ignore
@@ -191,12 +240,18 @@ pub use ast_macro::Ast;
 /// node.visit(Box::new(pass));                     // boxed
 /// node.visit(|e: &Expr| exprs += 1);              // one closure
 /// node.visit((|e: &Expr| .., |t: &Type| ..));     // two closures, one walk
-/// node.visit(&mut (first, second));               // two visitors
 /// ```
 ///
-/// A tuple is all closures or all visitors, never a mix — a tuple of closures becomes one hook
-/// that only observes, and a visitor descends on its own, so the two cannot share a walk. To mix,
-/// make the closure a visitor first: `(closure.into_visitor(), &mut pass)`.
+/// A tuple is closures and nothing else. Folding them into one hook is what buys the single walk,
+/// and a visitor cannot join that fold because it descends on its own. Two visitors are two walks,
+/// written as two calls:
+///
+/// ```ignore
+/// node.visit(&mut first);
+/// node.visit(&mut second);
+/// ```
+///
+/// A tuple holding a visitor is rejected:
 ///
 /// ```compile_fail
 /// use ast::Ast;
@@ -209,13 +264,15 @@ pub use ast_macro::Ast;
 /// impl visit::VisitMut for Pass {}
 ///
 /// fn main() {
-///     let mut n = 0;
 ///     let mut p = Pass;
-///     Expr::Lit(1).visit((|_: &Expr| n += 1, &mut p));   // closure + visitor: rejected
+///     let mut q = Pass;
+///     Expr::Lit(1).visit(&mut (p, q));
 /// }
 /// ```
 ///
-/// `visit_mut` takes the same five things through `IntoVisitorMut`; its closures take `&mut T`.
+/// `visit_mut` takes the same four things through `IntoVisitorMut`; its closures take `&mut T`.
+/// `into_visitor` turns a closure into a standalone visitor value, which then goes wherever a
+/// visitor goes.
 ///
 /// # Extending a visitor
 ///
@@ -261,45 +318,10 @@ pub use ast_macro::Ast;
 /// method lives in the base. Mark that field in the base's own `visitor!` instead, or drop the
 /// marker and let the walk take the elements one at a time.
 ///
-/// ## Writing the chain for free
-///
-/// Implementing every trait in the chain is the cost of inheriting, and most of those impls are
-/// empty: a pass that touches only its own types still has to say so for each ancestor. The
-/// generated module writes them for you. Pass its own path first — the expansion names the
-/// ancestors relative to it:
-///
-/// ```ignore
-/// top::impl_chain!(top; MyPass);          // every ancestor, empty
-/// impl<S> top::Visit<S> for MyPass {
-///     fn visit_item(&mut self, i: &Item<S>) { .. }
-/// }
-/// ```
-///
-/// To act on an inherited node, give the method to the macro, which puts it in the impl of
-/// whichever ancestor declares it. An `impl` of your own alongside would be a second impl of the
-/// same trait (E0119). Leave the argument's type off and the macro supplies it:
-///
-/// ```ignore
-/// top::impl_chain! { top; MyPass;
-///     fn visit_type(&mut self, i) { self.types += 1; base::visit_type(self, i); }
-/// }
-/// ```
-///
-/// You never say which ancestor that is, or what parameters its trait takes. Spelling the
-/// signature out works too, if you would rather read it than infer it.
-///
-/// For a long body — or just for rustfmt, which does not reach inside a macro call — name the
-/// method with no body and write the impls yourself:
-///
-/// ```ignore
-/// top::impl_chain! { top; MyPass; fn visit_type; }
-/// impl<S> base::Visit<S> for MyPass { fn visit_type(&mut self, i: &Type<S>) { .. } }
-/// impl<S> base::VisitMut<S> for MyPass {}
-/// ```
-///
-/// A name no ancestor declares is rejected rather than ignored: a method of this visitor's *own*
-/// trait belongs in your `impl Visit`. On a visitor with no ancestors the macro expands to
-/// nothing, so code that generates visitors can call it without asking first.
+/// A visitor has to implement every trait in the chain, including the ancestors whose nodes it
+/// does not touch. Those impls are empty — every method already walks — but Rust has no way to ask
+/// for them, so a pass that overrides one node of `top` still writes `impl base::Visit for P {}`
+/// and its `VisitMut` twin for each ancestor.
 ///
 /// ## Naming an ancestor you cannot reach
 ///
@@ -408,7 +430,7 @@ pub trait SeqView<T> {
     /// Iterate the elements by shared ref (`for x in v.view_iter() { … }`). Default impl over `get`.
     /// Named `view_iter` (not `iter`) so it never shadows the slice `iter` on a concrete `Vec` when
     /// `SeqView` is in scope.
-    fn view_iter(&self) -> SeqIter<'_, T>
+    fn view_iter(&self) -> SeqIter<'_, T, Self>
     where
         Self: Sized,
     {
@@ -416,12 +438,13 @@ pub trait SeqView<T> {
             seq: self,
             idx: 0,
             len: self.len(),
+            _element: core::marker::PhantomData,
         }
     }
     /// Iterate the elements by `&mut` for in-place edits (`for x in v.view_iter_mut() { … }`). For
     /// structural changes use `push`/`insert`/`remove`/`retain_mut`. Default impl over the by-index
     /// `get_mut`. Named `view_iter_mut` to avoid shadowing the slice `iter_mut`.
-    fn view_iter_mut(&mut self) -> SeqIterMut<'_, T>
+    fn view_iter_mut(&mut self) -> SeqIterMut<'_, T, Self>
     where
         Self: Sized,
     {
@@ -430,18 +453,21 @@ pub trait SeqView<T> {
             seq: self,
             idx: 0,
             len,
+            _element: core::marker::PhantomData,
         }
     }
 }
 
 /// The shared iterator returned by [`SeqView::view_iter`] — yields each element by index.
-pub struct SeqIter<'a, T> {
-    seq: &'a dyn SeqView<T>,
+pub struct SeqIter<'a, T, V: SeqView<T>> {
+    seq: &'a V,
     idx: usize,
     len: usize,
+    // `T` is named only by the bound, which does not count as a use.
+    _element: core::marker::PhantomData<&'a T>,
 }
 
-impl<'a, T> Iterator for SeqIter<'a, T> {
+impl<'a, T, V: SeqView<T>> Iterator for SeqIter<'a, T, V> {
     type Item = &'a T;
     fn next(&mut self) -> Option<&'a T> {
         if self.idx >= self.len {
@@ -459,16 +485,17 @@ impl<'a, T> Iterator for SeqIter<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for SeqIter<'a, T> {}
+impl<'a, T, V: SeqView<T>> ExactSizeIterator for SeqIter<'a, T, V> {}
 
 /// The `&mut` iterator returned by [`SeqView::view_iter_mut`] — yields each element once, by index.
-pub struct SeqIterMut<'a, T> {
-    seq: &'a mut dyn SeqView<T>,
+pub struct SeqIterMut<'a, T, V: SeqView<T>> {
+    seq: &'a mut V,
     idx: usize,
     len: usize,
+    _element: core::marker::PhantomData<&'a mut T>,
 }
 
-impl<'a, T> Iterator for SeqIterMut<'a, T> {
+impl<'a, T, V: SeqView<T>> Iterator for SeqIterMut<'a, T, V> {
     type Item = &'a mut T;
     fn next(&mut self) -> Option<&'a mut T> {
         if self.idx >= self.len {
@@ -487,7 +514,7 @@ impl<'a, T> Iterator for SeqIterMut<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for SeqIterMut<'a, T> {}
+impl<'a, T, V: SeqView<T>> ExactSizeIterator for SeqIterMut<'a, T, V> {}
 
 /// A **map-like** view of an AST map field (`HashMap`/`BTreeMap`): the node sits in the VALUE slot, so
 /// the viewed element is the map's value type rather than its first type argument. Descent-only — a map
@@ -496,46 +523,39 @@ impl<'a, T> ExactSizeIterator for SeqIterMut<'a, T> {}
 /// **No longer part of the walk.** A map field descends through [`Walk`], whose `Thru<H>` impl for
 /// `HashMap`/`BTreeMap` iterates the values directly. This trait is kept as a way to write that
 /// traversal by hand; nothing `visitor!` generates refers to it.
-/// The iterator is boxed rather than named: an `impl Trait` return would ask for 1.75 and an
-/// associated type for 1.65, and this trait is a hand-written-traversal convenience that nothing
-/// generated calls — so it is the one place where an allocation buys a lower minimum compiler.
-pub trait MapView<T> {
-    fn view_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a>
-    where
-        T: 'a;
+/// The borrow is a parameter of the trait rather than of the methods, so the two iterators can be
+/// named as associated types: a map yields its own `Values`/`ValuesMut`, with no `dyn` and no
+/// allocation. A GAT would put the lifetime back on the method, and costs 1.65.
+pub trait MapView<'a, T: 'a> {
+    /// The map's own by-reference value iterator.
+    type Iter: Iterator<Item = &'a T>;
+    /// The map's own by-`&mut` value iterator.
+    type IterMut: Iterator<Item = &'a mut T>;
+
+    fn view_iter(&'a self) -> Self::Iter;
     /// Iterate the values by `&mut` for in-place edits (keys are untouched).
-    fn view_iter_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut T> + 'a>
-    where
-        T: 'a;
+    fn view_iter_mut(&'a mut self) -> Self::IterMut;
 }
 
-impl<K, V, S> MapView<V> for std::collections::HashMap<K, V, S> {
-    fn view_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a V> + 'a>
-    where
-        V: 'a,
-    {
-        Box::new(self.values())
+impl<'a, K: 'a, V: 'a, S> MapView<'a, V> for std::collections::HashMap<K, V, S> {
+    type Iter = std::collections::hash_map::Values<'a, K, V>;
+    type IterMut = std::collections::hash_map::ValuesMut<'a, K, V>;
+    fn view_iter(&'a self) -> Self::Iter {
+        self.values()
     }
-    fn view_iter_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut V> + 'a>
-    where
-        V: 'a,
-    {
-        Box::new(self.values_mut())
+    fn view_iter_mut(&'a mut self) -> Self::IterMut {
+        self.values_mut()
     }
 }
 
-impl<K, V> MapView<V> for std::collections::BTreeMap<K, V> {
-    fn view_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a V> + 'a>
-    where
-        V: 'a,
-    {
-        Box::new(self.values())
+impl<'a, K: 'a, V: 'a> MapView<'a, V> for std::collections::BTreeMap<K, V> {
+    type Iter = std::collections::btree_map::Values<'a, K, V>;
+    type IterMut = std::collections::btree_map::ValuesMut<'a, K, V>;
+    fn view_iter(&'a self) -> Self::Iter {
+        self.values()
     }
-    fn view_iter_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut V> + 'a>
-    where
-        V: 'a,
-    {
-        Box::new(self.values_mut())
+    fn view_iter_mut(&'a mut self) -> Self::IterMut {
+        self.values_mut()
     }
 }
 

@@ -12,6 +12,25 @@ pub(crate) fn build_chain(members: &[Index], into_hook: &Ident) -> TokenStream {
     }
 }
 
+/// The same nesting at the type level: what [`build_chain`] evaluates to, named rather than
+/// inferred, since the conversion reports its result as an associated type.
+fn chain_ty(
+    fs: &[Ident],
+    ts: &[Ident],
+    into_hook_tr: &Ident,
+    a_hook: &Ident,
+    g_args: &[TokenStream],
+) -> TokenStream {
+    let (f, t) = (&fs[0], &ts[0]);
+    let here = quote!( <#f as #into_hook_tr< #(#g_args,)* #t >>::#a_hook );
+    if fs.len() == 1 {
+        here
+    } else {
+        let rest = chain_ty(&fs[1..], &ts[1..], into_hook_tr, a_hook, g_args);
+        quote!( (#here, #rest) )
+    }
+}
+
 /// `IntoVisitor[Mut]` impls for tuples of closures, arity 2..=`max_arity`. `union_where` are the
 /// visited types' `where`-predicates, appended to each impl (it names the visited types via the
 /// `IntoHook<.., T>` bounds, so they must stay well-formed).
@@ -19,21 +38,21 @@ pub(crate) fn tuple_impls(
     max_arity: usize,
     g_params: &[GenericParam],
     g_args: &[TokenStream],
-    g_use: &TokenStream,
     side: Side,
     union_where: &[WherePredicate],
 ) -> Vec<TokenStream> {
     let into_vis_tr = side.ty("IntoVisitor");
-    let into_hook_tr = side.ty("IntoHook");
+    let into_hook_tr = side.ty("__SyanIntoHook");
     let into_vis_fn = side.func("into_visitor");
     let into_hook_fn = side.func("into_hook");
-    let visit_tr = side.visit_trait();
-    let driver = side.ty("Driver");
+    let driver = side.ty("__SyanDriver");
     // Helper param prefixes that avoid the visited types' own generic param names (so a visited type
     // may declare a param literally named `__F0`/`__T0`/…).
     let reserved: HashSet<String> = g_params.iter().map(param_name).collect();
     let pf = fresh_prefix("__F", &reserved, max_arity);
     let pt = fresh_prefix("__T", &reserved, max_arity);
+    let a_vis = fresh_ident("__Visitor", &reserved);
+    let a_hook = fresh_ident("__Hooked", &reserved);
     (2..=max_arity)
         .map(|n| {
             let fs: Vec<Ident> = (0..n)
@@ -49,12 +68,14 @@ pub(crate) fn tuple_impls(
                 .map(|(f, t)| quote!(#f: #into_hook_tr< #(#g_args,)* #t >))
                 .collect();
             let chain = build_chain(&members, &into_hook_fn);
+            let chain_t = chain_ty(&fs, &ts, &into_hook_tr, &a_hook, g_args);
             quote! {
                 impl< #(#g_params,)* #(#fs,)* #(#ts,)* >
                     #into_vis_tr< #(#g_args,)* ( #(#ts,)* ) > for ( #(#fs,)* )
                 where #(#wheres,)* #(#union_where,)*
                 {
-                    fn #into_vis_fn(self) -> impl #visit_tr #g_use {
+                    type #a_vis = #driver< #chain_t >;
+                    fn #into_vis_fn(self) -> Self::#a_vis {
                         #driver( #chain )
                     }
                 }
@@ -172,7 +193,7 @@ pub(crate) struct Lower<'a> {
 /// [`Lower::check_generic_element`].
 fn is_phantom_data(ty: &Type) -> bool {
     matches!(ty, Type::Path(tp)
-        if tp.path.segments.last().is_some_and(|s| s.ident == "PhantomData"))
+        if tp.path.segments.last().map_or(false, |s| s.ident == "PhantomData"))
 }
 
 impl<'a> Lower<'a> {
@@ -354,15 +375,17 @@ impl<'a> Lower<'a> {
         head_path: &Path,
         owner_types: &HashSet<String>,
     ) {
-        let PathArguments::AngleBracketed(ab) = args else {
-            return;
+        let ab = match args {
+            PathArguments::AngleBracketed(ab) => ab,
+            _ => return,
         };
         // `done_by_path` is keyed by the `visitor!(..)` paths (`crate::…`), but `head_path` came from
         // a `#[subast]` entry, which the metadata macro re-roots to `$crate::…`. Fold the root so the
         // two meet; a miss here only costs the diagnostic, never correctness.
         let key = norm_path(head_path).replace("$crate", "crate");
-        let Some(def) = self.done_by_path.get(&key) else {
-            return;
+        let def = match self.done_by_path.get(&key) {
+            Some(def) => def,
+            None => return,
         };
         let head_params = match item_generics(&def.def) {
             Some(g) => gparams(g),
@@ -378,10 +401,14 @@ impl<'a> Lower<'a> {
             _ => None,
         });
         for arg in &ab.args {
-            let GenericArgument::Type(arg_ty) = arg else {
-                continue;
+            let arg_ty = match arg {
+                GenericArgument::Type(t) => t,
+                _ => continue,
             };
-            let Some(param) = params.next() else { return };
+            let param = match params.next() {
+                Some(p) => p,
+                None => return,
+            };
             // Does this argument carry anything the owner visits?
             if peel(arg_ty, owner_types).is_none() {
                 continue;

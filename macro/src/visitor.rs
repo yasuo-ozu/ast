@@ -164,7 +164,7 @@ fn intermediate_impls(
 ) -> Vec<TokenStream> {
     st.done
         .iter()
-        .filter(|d| item_ident(&d.def).is_some_and(|id| !m.method_set.contains(&id.to_string())))
+        .filter(|d| item_ident(&d.def).map_or(false, |id| !m.method_set.contains(&id.to_string())))
         .flat_map(|d| {
             let own_use = angle(&gargs(item_generics(&d.def).unwrap()));
             let mut preds = union_where.to_vec();
@@ -368,7 +368,8 @@ fn generate_module(st: &BuildInput) -> TokenStream {
         .flat_map(|vt| vt.own_where.iter().cloned())
         .filter(|p| {
             !m.method_mode
-                || where_pred_param(p).is_none_or(|id| !m.unshared_names.contains(&id.to_string()))
+                || where_pred_param(p)
+                    .map_or(true, |id| !m.unshared_names.contains(&id.to_string()))
         })
         .filter(|p| seen_pred.insert(quote!(#p).to_string()))
         .collect();

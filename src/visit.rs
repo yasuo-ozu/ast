@@ -585,43 +585,46 @@ impl<'a, T> ExactSizeIterator for SeqIterMut<'a, T> {}
 /// **No longer part of the walk.** A map field descends through [`Walk`], whose `Thru<H>` impl for
 /// `HashMap`/`BTreeMap` iterates the values directly. This trait is kept as a way to write that
 /// traversal by hand; nothing `visitor!` generates refers to it.
+/// The iterator is boxed rather than named: an `impl Trait` return would ask for 1.75 and an
+/// associated type for 1.65, and this trait is a hand-written-traversal convenience that nothing
+/// generated calls — so it is the one place where an allocation buys a lower minimum compiler.
 pub trait MapView<T> {
-    fn view_iter<'a>(&'a self) -> impl Iterator<Item = &'a T>
+    fn view_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a>
     where
         T: 'a;
     /// Iterate the values by `&mut` for in-place edits (keys are untouched).
-    fn view_iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut T>
+    fn view_iter_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut T> + 'a>
     where
         T: 'a;
 }
 
 impl<K, V, S> MapView<V> for std::collections::HashMap<K, V, S> {
-    fn view_iter<'a>(&'a self) -> impl Iterator<Item = &'a V>
+    fn view_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a V> + 'a>
     where
         V: 'a,
     {
-        self.values()
+        Box::new(self.values())
     }
-    fn view_iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut V>
+    fn view_iter_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut V> + 'a>
     where
         V: 'a,
     {
-        self.values_mut()
+        Box::new(self.values_mut())
     }
 }
 
 impl<K, V> MapView<V> for std::collections::BTreeMap<K, V> {
-    fn view_iter<'a>(&'a self) -> impl Iterator<Item = &'a V>
+    fn view_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a V> + 'a>
     where
         V: 'a,
     {
-        self.values()
+        Box::new(self.values())
     }
-    fn view_iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut V>
+    fn view_iter_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut V> + 'a>
     where
         V: 'a,
     {
-        self.values_mut()
+        Box::new(self.values_mut())
     }
 }
 
@@ -748,12 +751,16 @@ use indicator::{Skip, Thru};
 /// `H` is what lets the container impls below stay generic in the types they hold — `(Length, Line)`
 /// and `(Line, Line)` are the *same* impl at different indicators — so no leaf type is ever named and
 /// no shape needs an impl of its own.
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` cannot be walked at `{H}`",
-    label = "this field's shape has no `Walk` impl",
-    note = "a visited node needs `#[derive(Ast)]` and an entry in the owning type's `#[subast(..)]`; \
+#[cfg_attr(
+    has_diagnostic,
+    diagnostic::on_unimplemented(
+        message = "`{Self}` cannot be walked at `{H}`",
+        label = "this field's shape has no `Walk` impl",
+        note = "a visited node needs `#[derive(Ast)]` and an entry in the owning type's `#[subast(..)]`; \
             a container of one needs a `Walk` impl, which `ast::visit` has for `Vec`, `VecDeque`, \
-            `Punctuated`, `Option`, `Box`, `Attempt`, maps, slices, arrays and tuples"
+            `Option`, `Box`, maps, slices, arrays and tuples, and which a crate can add for a \
+            container of its own"
+    )
 )]
 pub trait Walk<M, H, V: ?Sized> {
     /// Offer the parts of `self` that `H` selects to `v`.
@@ -761,10 +768,13 @@ pub trait Walk<M, H, V: ?Sized> {
 }
 
 /// The `&mut` half of [`Walk`].
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` cannot be walked mutably at `{H}`",
-    label = "this field's shape has no `WalkMut` impl",
-    note = "a field behind a shared `&` is walkable on the shared side only"
+#[cfg_attr(
+    has_diagnostic,
+    diagnostic::on_unimplemented(
+        message = "`{Self}` cannot be walked mutably at `{H}`",
+        label = "this field's shape has no `WalkMut` impl",
+        note = "a field behind a shared `&` is walkable on the shared side only"
+    )
 )]
 pub trait WalkMut<M, H, V: ?Sized> {
     /// Offer the parts of `self` that `H` selects to `v`, by `&mut`.

@@ -503,8 +503,9 @@ pub(crate) fn requalify_ancestor(anc: &Path, base: &Path) -> Path {
     if anc.leading_colon.is_some() {
         return anc.clone();
     }
-    let Some(first) = anc.segments.first() else {
-        return anc.clone();
+    let first = match anc.segments.first() {
+        Some(first) => first,
+        None => return anc.clone(),
     };
     if !matches!(first.arguments, PathArguments::None) {
         return anc.clone();

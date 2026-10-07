@@ -2,7 +2,7 @@
 name = "ast-macro"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.61"
 description = "Proc macros for the `ast` crate"
 license = "MIT"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
@@ -16,7 +16,7 @@ proc-macro2 = "1.0"
 quote = "1.0"
 template-quote = "0.4"
 proc-macro-error = { version = "1.0", default-features = false }
-type-leak = "0.2.0"
+type-leak = "0.7.0"
 
 [dependencies.syn]
 version = "2.0"

@@ -27,6 +27,15 @@ jobs:
           fi
           echo "version=$root" >> "$GITHUB_OUTPUT"
 
+      # A default resolve picks the newest dependency versions, several of which need a
+      # much newer toolchain than this crate does. Resolving with the fallback asks for
+      # versions that honour our `rust-version`, which needs a current cargo — hence a
+      # lockfile written by stable, then checked with the old compiler.
+      - name: Resolve dependencies that honour the MSRV
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+        run: cargo generate-lockfile
+
       - name: Install Rust ${{ steps.msrv.outputs.version }}
         run: |
           rustup toolchain install ${{ steps.msrv.outputs.version }} --profile minimal --no-self-update
@@ -36,4 +45,4 @@ jobs:
       # `check`, never `test`: dev-dependencies carry higher MSRVs, and the
       # trybuild fixtures compare rustc diagnostics whose wording drifts by release.
       - name: Check
-        run: cargo check --workspace
+        run: cargo check --workspace --locked

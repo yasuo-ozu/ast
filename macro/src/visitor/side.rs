@@ -29,9 +29,9 @@ pub(crate) fn gen_side(
     let id = |s: &str| Ident::new(s, Span::call_site());
     let visit_tr = side.visit_trait();
     let into_vis_tr = side.ty("IntoVisitor");
-    let into_hook_tr = side.ty("IntoHook");
-    let hook_tr = side.ty("Hook");
-    let driver = side.ty("Driver");
+    let into_hook_tr = side.ty("__SyanIntoHook");
+    let hook_tr = side.ty("__SyanHook");
+    let driver = side.ty("__SyanDriver");
     let into_vis_fn = side.func("into_visitor");
     let into_hook_fn = side.func("into_hook");
     let visit_method = side.func("visit");
@@ -56,6 +56,11 @@ pub(crate) fn gen_side(
     // Per-method generics for the container-edit views (`visit_*_seq`/`_opt` take `&mut impl SeqView<T>`
     // / `OptView<T>` — the field type itself, no wrapper).
     let p_vw = fresh_ident("__VW", &reserved);
+    // The conversions name their result as an associated type rather than returning `impl Trait`
+    // from a trait method: that spelling is only stable from 1.75, and every one of these impls
+    // knows its concrete adapter anyway.
+    let a_vis = fresh_ident("__Visitor", &reserved);
+    let a_hook = fresh_ident("__Hooked", &reserved);
     let p_ow = fresh_ident("__OW", &reserved);
 
     /// One container-edit view (`#[seq]` or `#[opt]`) generated for a visited type. Replaces the
@@ -182,7 +187,7 @@ pub(crate) fn gen_side(
             let method_where: Vec<WherePredicate> = t
                 .own_where
                 .iter()
-                .filter(|p| where_pred_param(p).is_some_and(|id| mp_names.contains(&id.to_string())))
+                .filter(|p| where_pred_param(p).map_or(false, |id| mp_names.contains(&id.to_string())))
                 .cloned()
                 .collect();
             // Trait method: `where Self: Sized` (struct-only) + the method-param bounds.
@@ -235,13 +240,13 @@ pub(crate) fn gen_side(
                 trait_where,
                 free_where,
                 hook: side.func(&format!("hook_{}", to_snake(&ident))),
-                hook_struct: side.ty(&format!("{ident}Hook")),
+                hook_struct: side.ty(&format!("__Syan{ident}Hook")),
                 body: if side.mutable { t.body_mut.clone() } else { t.body.clone() },
             }
         })
         .collect();
 
-    let tup = tuple_impls(8, g_params, g_args, g_use, side, union_where);
+    let tup = tuple_impls(8, g_params, g_args, side, union_where);
     // The union of every visited type's `where`-predicates, repeated on each generated item that is
     // quantified over the full param union (the trait, free fns, the `&mut V` / Driver / closure /
     // Chain impls) so a visited type like `enum Expr<S> where S: Bound { .. }` stays well-formed.
@@ -489,7 +494,7 @@ pub(crate) fn gen_side(
                     let args = &d.args;
                     (
                         side.func(&format!("hook_{}", to_snake(&d.ident))),
-                        side.ty(&format!("{}InhHook", d.ident)),
+                        side.ty(&format!("__Syan{}InhHook", d.ident)),
                         side.method(&d.ident),
                         quote!( #path #args ),
                     )
@@ -500,23 +505,26 @@ pub(crate) fn gen_side(
     let closure_machinery = quote! {
         #(if !struct_only) {
         pub trait #into_vis_tr< #(#g_params,)* #p_t > #uw {
-            fn #into_vis_fn(self) -> impl #visit_tr #g_use;
+            type #a_vis: #visit_tr #g_use;
+            fn #into_vis_fn(self) -> Self::#a_vis;
         }
         impl< #(#g_params,)* #p_v: #visit_tr #g_use > #into_vis_tr< #(#g_args,)* () > for #p_v #uw {
-            fn #into_vis_fn(self) -> impl #visit_tr #g_use { self }
+            type #a_vis = Self;
+            fn #into_vis_fn(self) -> Self::#a_vis { self }
         }
 
         // Closures: shallow Hook + single-pass Driver. These are the closure adapters' own
-        // machinery — a user names `IntoVisitor` (via `node.visit(..)`), never these. Kept private
-        // to the generated module so a `use path::to::visit::*;` cannot reach them: `#[doc(hidden)]`
-        // only hides an item from rustdoc, it still imports.
+        // machinery — a user names `IntoVisitor` (via `node.visit(..)`), never these. They are
+        // `pub` because `IntoVisitor` reports its result as an associated type and a public trait
+        // cannot name a private one; `#[doc(hidden)]` keeps them out of the docs, and the `__Syan`
+        // prefix out of the way of a `use path::to::visit::*;`.
         // The traits chain the way the visitors do: an ancestor's `Visit` has the next one up as a
         // supertrait, so proving `Driver<H>` visits at one level needs `H` to answer every level
         // above it too. Each ancestor's parameters are a subset of the ones below, so the bound is
         // always nameable.
         #(for (i, h) in anc_hooks.iter().enumerate()) {
             #[doc(hidden)]
-            trait #{&h.tr}< #(for p in &h.g_params) { #p, } >
+            pub trait #{&h.tr}< #(for p in &h.g_params) { #p, } >
                 #(if let Some(up) = anc_hooks.get(i + 1)) { : #{&up.tr} #{&up.g_use} }
             {
                 #(for (hook, _, _, ty) in &h.methods) {
@@ -525,18 +533,19 @@ pub(crate) fn gen_side(
             }
         }
         #[doc(hidden)]
-        trait #hook_tr #g_def #(if let Some(h0) = anc_hooks.first()) { : #{&h0.tr} #{&h0.g_use} } #uw {
+        pub trait #hook_tr #g_def #(if let Some(h0) = anc_hooks.first()) { : #{&h0.tr} #{&h0.g_use} } #uw {
             #(for s in &sides) {
                 fn #{&s.hook}(&mut self, i: #amp #{&s.ty}) { let _ = i; }
             }
         }
         #[doc(hidden)]
-        trait #into_hook_tr< #(#g_params,)* #p_t > #uw {
-            fn #into_hook_fn(self) -> impl #hook_tr #g_use;
+        pub trait #into_hook_tr< #(#g_params,)* #p_t > #uw {
+            type #a_hook: #hook_tr #g_use;
+            fn #into_hook_fn(self) -> Self::#a_hook;
         }
 
         #[doc(hidden)]
-        struct #driver<#p_h>(#p_h);
+        pub struct #driver<#p_h>(pub #p_h);
         impl< #(#g_params,)* #p_h: #hook_tr #g_use > #visit_tr #g_use for #driver<#p_h> #uw {
             #(for s in &sides) {
                 fn #{&s.method}(&mut self, i: #amp #{&s.ty}) {
@@ -573,7 +582,7 @@ pub(crate) fn gen_side(
         #(for (hi, h) in anc_hooks.iter().enumerate()) {
             #(for (hook, hook_struct, _, ty) in &h.methods) {
                 #[doc(hidden)]
-                struct #hook_struct<#p_f>(#p_f);
+                pub struct #hook_struct<#p_f>(pub #p_f);
                 impl< #(for p in &h.g_params) { #p, } #p_f: ::core::ops::FnMut( #amp #ty ) >
                     #{&h.tr} #{&h.g_use} for #hook_struct<#p_f>
                 {
@@ -600,19 +609,21 @@ pub(crate) fn gen_side(
                 impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #ty ) >
                     #into_hook_tr< #(#g_args,)* #ty > for #p_f #uw
                 {
-                    fn #into_hook_fn(self) -> impl #hook_tr #g_use { #hook_struct(self) }
+                    type #a_hook = #hook_struct<#p_f>;
+                    fn #into_hook_fn(self) -> Self::#a_hook { #hook_struct(self) }
                 }
                 impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #ty ) >
                     #into_vis_tr< #(#g_args,)* #ty > for #p_f #uw
                 {
-                    fn #into_vis_fn(self) -> impl #visit_tr #g_use { #driver(#hook_struct(self)) }
+                    type #a_vis = #driver<#hook_struct<#p_f>>;
+                    fn #into_vis_fn(self) -> Self::#a_vis { #driver(#hook_struct(self)) }
                 }
             }
         }
 
         #(for s in &sides) {
             #[doc(hidden)]
-            struct #{&s.hook_struct}<#p_f>(#p_f);
+            pub struct #{&s.hook_struct}<#p_f>(pub #p_f);
             impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #{&s.ty} ) >
                 #hook_tr #g_use for #{&s.hook_struct}<#p_f> #uw
             {
@@ -621,12 +632,14 @@ pub(crate) fn gen_side(
             impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #{&s.ty} ) >
                 #into_hook_tr< #(#g_args,)* #{&s.ty} > for #p_f #uw
             {
-                fn #into_hook_fn(self) -> impl #hook_tr #g_use { #{&s.hook_struct}(self) }
+                type #a_hook = #{&s.hook_struct}<#p_f>;
+                fn #into_hook_fn(self) -> Self::#a_hook { #{&s.hook_struct}(self) }
             }
             impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #{&s.ty} ) >
                 #into_vis_tr< #(#g_args,)* #{&s.ty} > for #p_f #uw
             {
-                fn #into_vis_fn(self) -> impl #visit_tr #g_use { #driver(#{&s.hook_struct}(self)) }
+                type #a_vis = #driver<#{&s.hook_struct}<#p_f>>;
+                fn #into_vis_fn(self) -> Self::#a_vis { #driver(#{&s.hook_struct}(self)) }
             }
         }
 

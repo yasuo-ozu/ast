@@ -199,21 +199,48 @@ fn passes_from_different_levels_in_one_tuple() {
     assert_eq!((pair.0.types, pair.1.items), (1, 1));
 }
 
-// A tuple may hold either kind, or both: each element converts on its own, and the tuple of the
-// results is a visitor by the forwarding impls.
+// A tuple is all closures or all visitors, because a tuple of closures is folded into one hook and
+// walked once — a visitor cannot join that, since it descends on its own. To mix, turn the closure
+// into a visitor first; the result is a tuple of visitors, which walks once per element.
 
 #[test]
-fn tuple_mixes_a_closure_and_a_visitor() {
+fn a_converted_closure_sits_in_a_tuple_of_visitors() {
+    use top::IntoVisitor;
     let mut n = 0;
     let mut c = Counts::default();
-    sample().visit((|_: &Type<()>| n += 1, &mut c));
+    {
+        let closure = (|_: &Type<()>| n += 1).into_visitor();
+        sample().visit(&mut (closure, &mut c));
+    }
     assert_eq!((n, c.items), (1, 1));
 }
 
 #[test]
-fn tuple_mixes_three_ways() {
+fn three_passes_of_mixed_origin() {
+    use top::IntoVisitor;
     let mut n = 0;
     let (mut a, mut b) = (Counts::default(), BaseOnly::default());
-    sample().visit((|_: &Stmt<()>| n += 1, &mut a, &mut b));
+    {
+        let closure = (|_: &Stmt<()>| n += 1).into_visitor();
+        sample().visit(&mut (closure, &mut a, &mut b));
+    }
     assert_eq!((n, a.items, b.types), (1, 1, 1));
+}
+
+// A tuple of closures is folded into one hook and walked once — the callbacks interleave per node
+// rather than running one closure's whole traversal and then the next.
+#[test]
+fn a_tuple_of_closures_is_a_single_walk() {
+    use core::cell::RefCell;
+    let order = RefCell::new(String::new());
+    sample().visit((
+        |_: &Item<()>| order.borrow_mut().push('i'),
+        |_: &Stmt<()>| order.borrow_mut().push('s'),
+        |_: &Type<()>| order.borrow_mut().push('t'),
+    ));
+    assert_eq!(
+        order.into_inner(),
+        "ist",
+        "one pass down the chain, not three"
+    );
 }

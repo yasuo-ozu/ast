@@ -397,22 +397,23 @@ pub use ast_macro::Ast;
 /// * **a visitor** — any type that implements `Visit`, by value or by `&mut`.
 /// * **a closure** that takes `&T`, for any type the visitor reaches — one it lists, or one it
 ///   inherits. The argument type picks which node it sees. It runs for every `T` in the tree.
-/// * **a tuple of 2 to 8** of any of the above, in any combination — closures, visitors, or both.
-///   Each one sees every node.
+/// * **a tuple of 2 to 8 closures**. They are folded into one hook, so all of them run in a single
+///   walk.
+/// * **a tuple of 2 to 8 visitors**. Each one sees every node, walking the tree itself.
 /// * **a `Box` around a visitor**, by value.
 ///
 /// ```ignore
 /// node.visit(&mut pass);                          // a visitor
 /// node.visit(Box::new(pass));                     // boxed
 /// node.visit(|e: &Expr| exprs += 1);              // one closure
-/// node.visit((|e: &Expr| .., |t: &Type| ..));     // two closures
+/// node.visit((|e: &Expr| .., |t: &Type| ..));     // two closures, one walk
 /// node.visit(&mut (first, second));               // two visitors
-/// node.visit((|e: &Expr| .., &mut pass));         // one of each
 /// ```
 ///
-/// Every element of a tuple walks the tree itself, so a tuple of `n` is `n` walks. That is what
-/// makes the kinds interchangeable: a visitor descends through its own `visit_*`, and nothing can
-/// ask it to observe a node without descending. One closure on its own is a single walk.
+/// A tuple is all closures or all visitors. The two cannot share one, because a tuple of closures
+/// becomes a single hook that only observes, and a visitor descends on its own. To mix, turn the
+/// closure into a visitor first — `(closure.into_visitor(), &mut pass)` — which then walks once per
+/// element, as a tuple of visitors always does.
 ///
 /// A type of your own becomes a visitor as soon as it forwards `Visit`, which takes one line. It
 /// then goes anywhere `Box` goes.

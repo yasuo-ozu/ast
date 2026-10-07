@@ -35,4 +35,6 @@ fn diagnostics() {
     // Handing a visited type to a generic parameter the node holds but never follows (`Brackets<T, S>`
     // with `items: Vec<T>`) puts those nodes out of reach — previously a silent empty walk.
     t.compile_fail("tests/ui/generic_element.rs");
+    // A tuple is all closures or all visitors; the two cannot share one.
+    t.compile_fail("tests/ui/mixed_tuple.rs");
 }

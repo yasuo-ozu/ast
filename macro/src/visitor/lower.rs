@@ -1,16 +1,39 @@
 use super::*;
 
-/// `IntoVisitor[Mut]` impls for tuples, arity 2..=`max_arity`.
-///
-/// Each element converts on its own — a closure becomes a `Driver`, a visitor is already one — and
-/// the tuple of the results is a visitor by the forwarding impls in `gen_side`. That is what lets a
-/// tuple mix the two: nothing here needs to know which kind an element is.
-///
-/// It also means each element walks the tree itself, as a tuple of visitors always has. Composing
-/// closures into one shared `Driver` would be a single walk, but only for a tuple that is closures
-/// all the way down, and coherence does not allow both impls.
-///
-/// `union_where` are the visited types' `where`-predicates, appended to each impl.
+/// Right-nested `(self.0.into_hook(), (self.1.into_hook(), ...))` over tuple members — a tuple of hooks
+/// is a hook (see `gen_side`), so this composes them with no combinator type.
+pub(crate) fn build_chain(members: &[Index], into_hook: &Ident) -> TokenStream {
+    let m = &members[0];
+    if members.len() == 1 {
+        quote!(self.#m.#into_hook())
+    } else {
+        let rest = build_chain(&members[1..], into_hook);
+        quote!( (self.#m.#into_hook(), #rest) )
+    }
+}
+
+/// The same nesting at the type level: what [`build_chain`] evaluates to, named rather than
+/// inferred, since the conversion reports its result as an associated type.
+fn chain_ty(
+    fs: &[Ident],
+    ts: &[Ident],
+    into_hook_tr: &Ident,
+    a_hook: &Ident,
+    g_args: &[TokenStream],
+) -> TokenStream {
+    let (f, t) = (&fs[0], &ts[0]);
+    let here = quote!( <#f as #into_hook_tr< #(#g_args,)* #t >>::#a_hook );
+    if fs.len() == 1 {
+        here
+    } else {
+        let rest = chain_ty(&fs[1..], &ts[1..], into_hook_tr, a_hook, g_args);
+        quote!( (#here, #rest) )
+    }
+}
+
+/// `IntoVisitor[Mut]` impls for tuples of closures, arity 2..=`max_arity`. `union_where` are the
+/// visited types' `where`-predicates, appended to each impl (it names the visited types via the
+/// `IntoHook<.., T>` bounds, so they must stay well-formed).
 pub(crate) fn tuple_impls(
     max_arity: usize,
     g_params: &[GenericParam],
@@ -19,13 +42,17 @@ pub(crate) fn tuple_impls(
     union_where: &[WherePredicate],
 ) -> Vec<TokenStream> {
     let into_vis_tr = side.ty("IntoVisitor");
+    let into_hook_tr = side.ty("__SyanIntoHook");
     let into_vis_fn = side.func("into_visitor");
+    let into_hook_fn = side.func("into_hook");
+    let driver = side.ty("__SyanDriver");
     // Helper param prefixes that avoid the visited types' own generic param names (so a visited type
     // may declare a param literally named `__F0`/`__T0`/…).
     let reserved: HashSet<String> = g_params.iter().map(param_name).collect();
     let pf = fresh_prefix("__F", &reserved, max_arity);
     let pt = fresh_prefix("__T", &reserved, max_arity);
     let a_vis = fresh_ident("__Visitor", &reserved);
+    let a_hook = fresh_ident("__Hooked", &reserved);
     (2..=max_arity)
         .map(|n| {
             let fs: Vec<Ident> = (0..n)
@@ -38,21 +65,18 @@ pub(crate) fn tuple_impls(
             let wheres: Vec<TokenStream> = fs
                 .iter()
                 .zip(&ts)
-                .map(|(f, t)| quote!(#f: #into_vis_tr< #(#g_args,)* #t >))
+                .map(|(f, t)| quote!(#f: #into_hook_tr< #(#g_args,)* #t >))
                 .collect();
-            let parts: Vec<TokenStream> = fs
-                .iter()
-                .zip(&ts)
-                .map(|(f, t)| quote!( <#f as #into_vis_tr< #(#g_args,)* #t >>::#a_vis ))
-                .collect();
+            let chain = build_chain(&members, &into_hook_fn);
+            let chain_t = chain_ty(&fs, &ts, &into_hook_tr, &a_hook, g_args);
             quote! {
                 impl< #(#g_params,)* #(#fs,)* #(#ts,)* >
                     #into_vis_tr< #(#g_args,)* ( #(#ts,)* ) > for ( #(#fs,)* )
                 where #(#wheres,)* #(#union_where,)*
                 {
-                    type #a_vis = ( #(#parts,)* );
+                    type #a_vis = #driver< #chain_t >;
                     fn #into_vis_fn(self) -> Self::#a_vis {
-                        ( #(for m in &members), { self.#m.#into_vis_fn() } )
+                        #driver( #chain )
                     }
                 }
             }

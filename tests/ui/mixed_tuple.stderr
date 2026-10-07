@@ -1,0 +1,26 @@
+error[E0277]: the trait bound `({closure@$DIR/tests/ui/mixed_tuple.rs:23:25: 23:35}, &mut Pass): IntoVisitor<_>` is not satisfied
+  --> tests/ui/mixed_tuple.rs:23:24
+   |
+23 |     Expr::Lit(1).visit((|_: &Expr| n += 1, &mut p));
+   |                  ----- ^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |                  |
+   |                  required by a bound introduced by this call
+   |
+   = help: the trait `IntoVisitor<_>` is not implemented for `({closure@$DIR/tests/ui/mixed_tuple.rs:23:25: 23:35}, &mut Pass)`
+   = help: the following other types implement trait `IntoVisitor<__T>`:
+             `(__F0, __F1)` implements `IntoVisitor<(__T0, __T1)>`
+             `(__F0, __F1, __F2)` implements `IntoVisitor<(__T0, __T1, __T2)>`
+             `(__F0, __F1, __F2, __F3)` implements `IntoVisitor<(__T0, __T1, __T2, __T3)>`
+             `(__F0, __F1, __F2, __F3, __F4)` implements `IntoVisitor<(__T0, __T1, __T2, __T3, __T4)>`
+             `(__F0, __F1, __F2, __F3, __F4, __F5)` implements `IntoVisitor<(__T0, __T1, __T2, __T3, __T4, __T5)>`
+             `(__F0, __F1, __F2, __F3, __F4, __F5, __F6)` implements `IntoVisitor<(__T0, __T1, __T2, __T3, __T4, __T5, __T6)>`
+             `(__F0, __F1, __F2, __F3, __F4, __F5, __F6, __F7)` implements `IntoVisitor<(__T0, __T1, __T2, __T3, __T4, __T5, __T6, __T7)>`
+note: required by a bound in `visit::<impl Expr>::visit`
+  --> tests/ui/mixed_tuple.rs:6:10
+   |
+ 6 | #[derive(Ast)]
+   |          ^^^ required by this bound in `visit::<impl Expr>::visit`
+...
+12 |     ast::visitor!(crate::Expr);
+   |     -------------------------- in this macro invocation
+   = note: this error originates in the macro `$crate::_imp::ast_macro::__visitor_build` which comes from the expansion of the macro `ast::visitor` (in Nightly builds, run with -Z macro-backtrace for more info)

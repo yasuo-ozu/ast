@@ -53,6 +53,8 @@ pub(crate) fn gen_side(
     let p_f = fresh_ident("__F", &reserved);
     // Per-method generics for the container-edit views (`visit_*_seq`/`_opt` take `&mut impl SeqView<T>`
     // / `OptView<T>` — the field type itself, no wrapper).
+    let p_a = fresh_ident("__A", &reserved);
+    let p_b = fresh_ident("__B", &reserved);
     let p_vw = fresh_ident("__VW", &reserved);
     // The conversions name their result as an associated type rather than returning `impl Trait`
     // from a trait method: that spelling is only stable from 1.75, and every one of these impls
@@ -641,6 +643,30 @@ pub(crate) fn gen_side(
             }
         }
 
+        // Multiple closures: a 2-tuple of hooks is itself a hook (calls both), so it is the
+        // tuple-of-closures combinator directly — no `Chain` newtype. `build_chain` nests them right.
+        impl< #(#g_params,)* #p_a: #hook_tr #g_use, #p_b: #hook_tr #g_use >
+            #hook_tr #g_use for ( #p_a, #p_b ) #uw
+        {
+            #(for s in &sides) {
+                fn #{&s.hook}(&mut self, i: #amp #{&s.ty}) {
+                    self.0.#{&s.hook}(i);
+                    self.1.#{&s.hook}(i);
+                }
+            }
+        }
+        #(for h in &anc_hooks) {
+            impl< #(for p in &h.g_params) { #p, } #p_a: #{&h.tr} #{&h.g_use}, #p_b: #{&h.tr} #{&h.g_use} >
+                #{&h.tr} #{&h.g_use} for ( #p_a, #p_b )
+            {
+                #(for (hook, _, _, ty) in &h.methods) {
+                    fn #hook(&mut self, i: #amp #ty) {
+                        self.0.#hook(i);
+                        self.1.#hook(i);
+                    }
+                }
+            }
+        }
         #(for imp in &tup) { #imp }
         } // end #(if !struct_only) — closure/Driver machinery off for a recurse base
     };

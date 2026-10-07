@@ -70,9 +70,9 @@ fn main() {
 }
 ```
 
-`visit_mut` is the same with `&mut`. A tuple of two to eight runs several at once, and may hold
-closures, visitors, or both — `e.visit((|x: &Expr| .., &mut pass))`. Each element walks the tree
-itself.
+`visit_mut` is the same with `&mut`. A tuple of two to eight runs several at once: closures are
+folded into a single walk, visitors each walk the tree. A tuple holds one kind or the other — to mix,
+convert the closure first with `closure.into_visitor()`.
 
 ## Editing a list
 

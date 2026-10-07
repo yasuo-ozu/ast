@@ -4,10 +4,10 @@ error: two types in this visitor chain share the last segment `Foo` (`crate::m2:
 11 | pub mod v2 { ast::visitor!(crate::v1 => crate::m2::Foo); }
    |                                         ^^^^^^^^^^^^^^
 
-error[E0433]: failed to resolve: could not find `__syan_visited` in `v2`
+error[E0433]: failed to resolve: could not find `__ast_visited` in `v2`
   --> tests/ui/chain_last_ident_collision.rs:12:14
    |
 12 | pub mod v3 { ast::visitor!(crate::v2 => crate::Root); }
-   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ could not find `__syan_visited` in `v2`
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ could not find `__ast_visited` in `v2`
    |
    = note: this error originates in the macro `$crate::_imp::ast_macro::__visitor_entry` which comes from the expansion of the macro `ast::visitor` (in Nightly builds, run with -Z macro-backtrace for more info)

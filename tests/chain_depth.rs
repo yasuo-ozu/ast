@@ -88,7 +88,7 @@ mod deep {
         a: u32,
         e: u32,
     }
-    v5::impl_chain! { v5; P;
+    v5::__ast_chain::impl_chain! { v5; P;
         fn visit_a(&mut self, i) { self.a += 1; v1::visit_a(self, i); }
     }
     impl<S> v5::Visit<S> for P {
@@ -161,7 +161,7 @@ mod widened {
         types: u32,
         items: u32,
     }
-    top::impl_chain! { top; P;
+    top::__ast_chain::impl_chain! { top; P;
         fn visit_type(&mut self, i) { self.types += 1; base::visit_type(self, i); }
     }
     impl<S, T> top::Visit<S, T> for P {

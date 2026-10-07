@@ -251,7 +251,7 @@ impl<'a> Model<'a> {
                     .map(|p| Ident::new(&param_name(p), Span::call_site()))
                     .collect(),
             });
-            // Name each transitive ancestor through the base's `__syan_base` re-export chain rather
+            // Name each transitive ancestor through the base's `__ast_base` re-export chain rather
             // than by the path the upstream intermediate recorded. The recorded path has to be
             // nameable from here, which a private or un-re-exported upstream module is not; a relay
             // path only ever names the link below it, so the chain crosses a crate boundary (and a

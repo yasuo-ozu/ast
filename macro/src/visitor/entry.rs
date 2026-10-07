@@ -109,7 +109,7 @@ pub fn entry(input: TokenStream, nonce: u64) -> TokenStream {
         Some(base) => {
             let state = make_state(quote!(), all_types);
             quote! {
-                #base::__syan_visited ! { @visited #build { #state } }
+                #base::__ast_visited ! { @visited #build { #state } }
             }
         }
         // No base: pop the first type now (so `rest` carries the remainder), recording it under

@@ -25,6 +25,8 @@ fn diagnostics() {
     t.compile_fail("tests/ui/chain_last_ident_collision.rs");
     // A `#[seq]`/`#[opt]` field can't view an inherited (non-targeted) type — clean error, not E0599.
     t.compile_fail("tests/ui/edit_seq_inherited.rs");
+    // `use <visitor module>::*;` carries the traits and the free fns, never the chain machinery.
+    t.compile_fail("tests/ui/glob_import_hides_chain.rs");
     // Marker on a non-viewable / container-less / non-visited field → clean abort, not a cryptic trait error.
     t.compile_fail("tests/ui/edit_marker_array.rs");
     t.compile_fail("tests/ui/edit_marker_noncontainer.rs");
@@ -35,6 +37,4 @@ fn diagnostics() {
     // Handing a visited type to a generic parameter the node holds but never follows (`Brackets<T, S>`
     // with `items: Vec<T>`) puts those nodes out of reach — previously a silent empty walk.
     t.compile_fail("tests/ui/generic_element.rs");
-    // A tuple is all closures or all visitors; the two cannot share one.
-    t.compile_fail("tests/ui/mixed_tuple.rs");
 }

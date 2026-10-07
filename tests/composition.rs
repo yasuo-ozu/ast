@@ -160,7 +160,7 @@ mod glob_import {
     pub struct DriverMut;
     pub struct NodeHook;
     pub struct NodeHookMut;
-    pub struct __SyanWalkTag;
+    pub struct __AstWalkTag;
     pub trait Hook {}
     pub trait HookMut {}
     pub trait IntoHook {}

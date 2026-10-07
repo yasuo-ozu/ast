@@ -13,7 +13,7 @@ error[E0277]: the trait bound `Box<Leaf<S>>: SeqView<Leaf<S>>` is not satisfied
    = help: the following other types implement trait `SeqView<T>`:
              Vec<T>
              VecDeque<T>
-note: required by a bound in `Visit::visit_leaf_seq`
+note: required by a bound in `vis::Visit::visit_leaf_seq`
   --> tests/ui/edit_marker_noncontainer.rs:19:5
    |
 19 |     ast::visitor!(crate::Wrap, crate::Leaf);
@@ -35,7 +35,7 @@ error[E0277]: the trait bound `Box<Leaf<S>>: SeqView<Leaf<S>>` is not satisfied
    = help: the following other types implement trait `SeqView<T>`:
              Vec<T>
              VecDeque<T>
-note: required by a bound in `VisitMut::visit_leaf_seq_mut`
+note: required by a bound in `vis::VisitMut::visit_leaf_seq_mut`
   --> tests/ui/edit_marker_noncontainer.rs:19:5
    |
 19 |     ast::visitor!(crate::Wrap, crate::Leaf);

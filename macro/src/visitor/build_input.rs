@@ -21,7 +21,7 @@ pub(crate) struct BuildInput {
     /// through any number of generations.
     pub(crate) inherited: Vec<SubEntry>,
     /// The base visitor's generic-param union (when inheriting), supplied by the base's
-    /// `__syan_visited` macro, so the new trait can reference `base::Visit<..>` with the *base's*
+    /// `__ast_visited` macro, so the new trait can reference `base::Visit<..>` with the *base's*
     /// arity instead of the new union's.
     pub(crate) base_generics: Vec<GenericParam>,
     /// The direct base's own transitive ancestors (for multi-level `base => mid => new`), so the new
@@ -172,7 +172,7 @@ pub(crate) fn emit_ancestors(anc: &[AncIn]) -> TokenStream {
     quote!( #(#blocks)* )
 }
 
-/// The `__syan_visited` export — a `#[macro_export]` muncher that, when a downstream `visitor!(self =>
+/// The `__ast_visited` export — a `#[macro_export]` muncher that, when a downstream `visitor!(self =>
 /// New)` invokes it, appends everything this visitor can reach as `path as matchkey` (`@inh`), its
 /// param union (`@bg`), and its ancestor chain (`@an`).
 ///
@@ -198,7 +198,7 @@ pub(crate) fn emit_visited_macro(
         }))
         .collect();
     let own = emit_decls(own);
-    let vmacro = Ident::new(&format!("__syan_visited_{}", st.nonce), Span::call_site());
+    let vmacro = Ident::new(&format!("__ast_visited_{}", st.nonce), Span::call_site());
     quote! {
         // The embedded visited-type / ancestor paths may be `crate::`-rooted by design (they resolve in
         // the base's defining crate); suppress clippy's `crate_in_macro_def` for the generated macro.
@@ -214,7 +214,7 @@ pub(crate) fn emit_visited_macro(
             };
         }
         #[doc(hidden)]
-        pub use #vmacro as __syan_visited;
+        pub use #vmacro as __ast_visited;
     }
 }
 
@@ -262,25 +262,27 @@ pub(crate) fn emit_visited_macro(
 /// way: `$crate` here is *this* crate, not the expanding one — `visitor!` reaches the proc macro
 /// through a `macro_rules` wrapper in `visit`, and `$crate` resolves against that definition.
 /// Taking the path instead makes the expansion position-independent: every ancestor is reached as
-/// `<module>::__syan_base…`, the relay chain, which needs no crate name and no re-rooting.
+/// `<module>::__ast_base…`, the relay chain, which needs no crate name and no re-rooting.
 ///
 /// Emitted even with no ancestors (where it expands to nothing) so that code generating a visitor
 /// can call it unconditionally.
 pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> TokenStream {
-    let name = Ident::new(&format!("__syan_impl_chain_{nonce}"), Span::call_site());
-    let check = Ident::new(&format!("__syan_anc_{nonce}_check"), Span::call_site());
+    let name = Ident::new(&format!("__ast_impl_chain_{nonce}"), Span::call_site());
+    // The re-exports live one module down, so `use path::to::visit::*;` brings in none of them.
+    let chain_mod = Ident::new(CHAIN_MOD, Span::call_site());
+    let check = Ident::new(&format!("__ast_anc_{nonce}_check"), Span::call_site());
     let relay = Ident::new(BASE_RELAY, Span::call_site());
     let per: Vec<Ident> = (0..ancestors.len())
-        .map(|i| Ident::new(&format!("__syan_anc_{nonce}_{i}"), Span::call_site()))
+        .map(|i| Ident::new(&format!("__ast_anc_{nonce}_{i}"), Span::call_site()))
         .collect();
     // Re-exported beside `impl_chain`, under names without the nonce, so the body can reach them as
-    // `<module>::__syan_anc_0!`. A bare name would do for a caller in this crate — a `#[macro_export]`
+    // `<module>::__ast_anc_0!`. A bare name would do for a caller in this crate — a `#[macro_export]`
     // macro is in its own crate's textual scope — but not for one in another crate, and `$crate` here
     // means this crate. The module path the caller passes is the only spelling that works everywhere.
     let per_pub: Vec<Ident> = (0..ancestors.len())
-        .map(|i| Ident::new(&format!("__syan_anc_{i}"), Span::call_site()))
+        .map(|i| Ident::new(&format!("__ast_anc_{i}"), Span::call_site()))
         .collect();
-    let check_pub = Ident::new("__syan_anc_check", Span::call_site());
+    let check_pub = Ident::new("__ast_anc_check", Span::call_site());
     // Per declared type: the two method names and the alias the argument's type is named by. The
     // alias, not the type's own path, because the body is expanded in whatever crate invokes
     // `impl_chain!` and a `crate::`-rooted path would resolve there.
@@ -288,7 +290,7 @@ pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> To
         a.declares
             .iter()
             .map(|d| {
-                let alias = Ident::new(&format!("__syan_ty_{}", d.ident), Span::call_site());
+                let alias = Ident::new(&format!("__ast_ty_{}", d.ident), Span::call_site());
                 let args = &d.args;
                 (
                     Side::SHARED.method(&d.ident),
@@ -316,39 +318,39 @@ pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> To
                         ($($vm:ident)::+; $ty:ty; [$($k:tt)*] [$($km:tt)*] [$($s:tt)*]
                          $(#[$at:meta])* fn #sh (&mut $slf:ident, $i:ident) $b:block
                          $($rest:tt)*) => {
-                            $($vm)::+ ::#me!($($vm)::+; $ty;
+                            $($vm)::+ ::#chain_mod::#me!($($vm)::+; $ty;
                                 [$($k)* $(#[$at])* fn #sh (&mut $slf, $i: & #ty) $b]
                                 [$($km)*] [$($s)*] $($rest)*);
                         };
                         ($($vm:ident)::+; $ty:ty; [$($k:tt)*] [$($km:tt)*] [$($s:tt)*]
                          $(#[$at:meta])* fn #mt (&mut $slf:ident, $i:ident) $b:block
                          $($rest:tt)*) => {
-                            $($vm)::+ ::#me!($($vm)::+; $ty; [$($k)*]
+                            $($vm)::+ ::#chain_mod::#me!($($vm)::+; $ty; [$($k)*]
                                 [$($km)* $(#[$at])* fn #mt (&mut $slf, $i: &mut #ty) $b]
                                 [$($s)*] $($rest)*);
                         };
                         // Written out in full.
                         ($($vm:ident)::+; $ty:ty; [$($k:tt)*] [$($km:tt)*] [$($s:tt)*]
                          $(#[$at:meta])* fn #sh ($($sig:tt)*) $(-> $rt:ty)? $b:block $($rest:tt)*) => {
-                            $($vm)::+ ::#me!($($vm)::+; $ty;
+                            $($vm)::+ ::#chain_mod::#me!($($vm)::+; $ty;
                                 [$($k)* $(#[$at])* fn #sh ($($sig)*) $(-> $rt)? $b]
                                 [$($km)*] [$($s)*] $($rest)*);
                         };
                         ($($vm:ident)::+; $ty:ty; [$($k:tt)*] [$($km:tt)*] [$($s:tt)*]
                          $(#[$at:meta])* fn #mt ($($sig:tt)*) $(-> $rt:ty)? $b:block $($rest:tt)*) => {
-                            $($vm)::+ ::#me!($($vm)::+; $ty; [$($k)*]
+                            $($vm)::+ ::#chain_mod::#me!($($vm)::+; $ty; [$($k)*]
                                 [$($km)* $(#[$at])* fn #mt ($($sig)*) $(-> $rt)? $b]
                                 [$($s)*] $($rest)*);
                         };
                         // Handed back: this ancestor is the caller's to write.
                         ($($vm:ident)::+; $ty:ty; [$($k:tt)*] [$($km:tt)*] [$($s:tt)*]
                          fn #sh ; $($rest:tt)*) => {
-                            $($vm)::+ ::#me!($($vm)::+; $ty; [$($k)*] [$($km)*] [$($s)* mine]
+                            $($vm)::+ ::#chain_mod::#me!($($vm)::+; $ty; [$($k)*] [$($km)*] [$($s)* mine]
                                 $($rest)*);
                         };
                         ($($vm:ident)::+; $ty:ty; [$($k:tt)*] [$($km:tt)*] [$($s:tt)*]
                          fn #mt ; $($rest:tt)*) => {
-                            $($vm)::+ ::#me!($($vm)::+; $ty; [$($k)*] [$($km)*] [$($s)* mine]
+                            $($vm)::+ ::#chain_mod::#me!($($vm)::+; $ty; [$($k)*] [$($km)*] [$($s)* mine]
                                 $($rest)*);
                         };
                     }
@@ -356,11 +358,11 @@ pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> To
                     ($($vm:ident)::+; $ty:ty; [$($k:tt)*] [$($km:tt)*] [$($s:tt)*]
                      $(#[$at:meta])* fn $other:ident ($($sig:tt)*) $(-> $rt:ty)? $b:block
                      $($rest:tt)*) => {
-                        $($vm)::+ ::#me!($($vm)::+; $ty; [$($k)*] [$($km)*] [$($s)*] $($rest)*);
+                        $($vm)::+ ::#chain_mod::#me!($($vm)::+; $ty; [$($k)*] [$($km)*] [$($s)*] $($rest)*);
                     };
                     ($($vm:ident)::+; $ty:ty; [$($k:tt)*] [$($km:tt)*] [$($s:tt)*]
                      fn $other:ident ; $($rest:tt)*) => {
-                        $($vm)::+ ::#me!($($vm)::+; $ty; [$($k)*] [$($km)*] [$($s)*] $($rest)*);
+                        $($vm)::+ ::#chain_mod::#me!($($vm)::+; $ty; [$($k)*] [$($km)*] [$($s)*] $($rest)*);
                     };
                     ($($vm:ident)::+; $ty:ty; [$($k:tt)*] [$($km:tt)*] []) => {
                         impl< #(#g_params,)* > $($vm)::+ #(:: #hops)* ::Visit #g_use for $ty {
@@ -390,10 +392,10 @@ pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> To
             #(
                 ($($vm:ident)::+; $(#[$at:meta])* fn #all ($($sig:tt)*) $(-> $rt:ty)? $b:block
                  $($rest:tt)*) => {
-                    $($vm)::+ ::#check_pub!($($vm)::+; $($rest)*);
+                    $($vm)::+ ::#chain_mod::#check_pub!($($vm)::+; $($rest)*);
                 };
                 ($($vm:ident)::+; fn #all ; $($rest:tt)*) => {
-                    $($vm)::+ ::#check_pub!($($vm)::+; $($rest)*);
+                    $($vm)::+ ::#chain_mod::#check_pub!($($vm)::+; $($rest)*);
                 };
             )*
             ($($vm:ident)::+; $(#[$at:meta])* fn $other:ident $($rest:tt)*) => {
@@ -410,18 +412,24 @@ pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> To
         macro_rules! #name {
             ($($vm:ident)::+; $ty:ty) => { #name!($($vm)::+; $ty;); };
             ($($vm:ident)::+; $ty:ty; $($body:tt)*) => {
-                $($vm)::+ ::#check_pub!($($vm)::+; $($body)*);
-                #( $($vm)::+ ::#per_pub!($($vm)::+; $ty; [] [] [] $($body)*); )*
+                $($vm)::+ ::#chain_mod::#check_pub!($($vm)::+; $($body)*);
+                #( $($vm)::+ ::#chain_mod::#per_pub!($($vm)::+; $ty; [] [] [] $($body)*); )*
             };
         }
-        #(
+        // A glob import of the visitor module must bring in only what a user writes by hand, so the
+        // chain machinery is reached through a module of its own rather than re-exported beside the
+        // traits. A glob takes the module's *name*, not its contents.
+        #[doc(hidden)]
+        pub mod #chain_mod {
+            #(
+                #[doc(hidden)]
+                pub use #per as #per_pub;
+            )*
             #[doc(hidden)]
-            pub use #per as #per_pub;
-        )*
-        #[doc(hidden)]
-        pub use #check as #check_pub;
-        #[doc(hidden)]
-        pub use #name as impl_chain;
+            pub use #check as #check_pub;
+            #[doc(hidden)]
+            pub use #name as impl_chain;
+        }
     }
 }
 
@@ -465,10 +473,15 @@ pub(crate) fn base_host_crate(base: &Path) -> Option<Ident> {
 
 /// The name each visitor module re-exports its direct base under, so an ancestor is reachable
 /// through the chain rather than by its own path. A base module that is private, or that a
-/// downstream crate cannot otherwise name, is still reachable as `<base>::__syan_base`.
-pub(crate) const BASE_RELAY: &str = "__syan_base";
+/// downstream crate cannot otherwise name, is still reachable as `<base>::__ast_base`.
+pub(crate) const BASE_RELAY: &str = "__ast_base";
 
-/// The path to the ancestor `depth` links above `base`, walked through the `__syan_base` re-exports:
+/// The submodule each visitor module keeps its chain macros in. They are callable — the tests and
+/// any generated code reach them as `<module>::__ast_chain::impl_chain!` — but a glob import of the
+/// visitor module takes this name alone, not what is inside it.
+pub(crate) const CHAIN_MOD: &str = "__ast_chain";
+
+/// The path to the ancestor `depth` links above `base`, walked through the `__ast_base` re-exports:
 /// `depth` 0 is `base` itself, 1 is its base, and so on.
 ///
 /// This is what lets an ancestor chain cross a crate boundary without any path arithmetic: every

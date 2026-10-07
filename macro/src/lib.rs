@@ -21,8 +21,8 @@ fn random() -> u64 {
 
 /// The crate path the generated code names, from `#[ast(<path>)]` on the type, or `::ast`.
 ///
-/// A facade that re-exports this crate can be named instead — `#[ast(::syan)]` makes the impls read
-/// `::syan::visit::..`, which is what a grammar depending only on that facade needs.
+/// A facade that re-exports this crate can be named instead — `#[ast(::my_crate)]` makes the impls read
+/// `::my_crate::visit::..`, which is what a grammar depending only on that facade needs.
 fn crate_path(attrs: &[Attribute]) -> Path {
     for attr in attrs {
         if attr.path().is_ident("ast") {

@@ -42,10 +42,10 @@ pub(crate) fn tuple_impls(
     union_where: &[WherePredicate],
 ) -> Vec<TokenStream> {
     let into_vis_tr = side.ty("IntoVisitor");
-    let into_hook_tr = side.ty("__SyanIntoHook");
+    let into_hook_tr = side.ty("__AstIntoHook");
     let into_vis_fn = side.func("into_visitor");
     let into_hook_fn = side.func("into_hook");
-    let driver = side.ty("__SyanDriver");
+    let driver = side.ty("__AstDriver");
     // Helper param prefixes that avoid the visited types' own generic param names (so a visited type
     // may declare a param literally named `__F0`/`__T0`/…).
     let reserved: HashSet<String> = g_params.iter().map(param_name).collect();
@@ -169,12 +169,12 @@ pub(crate) struct Lower<'a> {
     /// methods `gen_side` emits.
     pub(crate) seq_used: &'a RefCell<HashSet<String>>,
     pub(crate) opt_used: &'a RefCell<HashSet<String>>,
-    /// This module's `Walk` tag with its args (`__SyanWalkTag<S>`), for spelling the bound at a call
+    /// This module's `Walk` tag with its args (`__AstWalkTag<S>`), for spelling the bound at a call
     /// site — the tag carries the union params so a node's impl can name params its own type omits.
     pub(crate) walk_tag_args: &'a TokenStream,
     /// Heads this module generates `Walk` impls for directly (its `visitor!(..)` targets). An
     /// *inherited* head is in `method_set` but not here — its impl is emitted separately, against the
-    /// path the base sent through `__syan_visited` (see `inherited_heads`).
+    /// path the base sent through `__ast_visited` (see `inherited_heads`).
     pub(crate) target_set: &'a HashSet<String>,
     /// Head types reached that are *inherited* — visited by a base module, so this module has no
     /// `Walk` impl for them. Recorded as `(dedup key, type tokens)` and emitted alongside the node
@@ -518,7 +518,7 @@ impl<'a> Lower<'a> {
                     }
                 })
                 // No `#[subast]` entry, so the head is one this visitor already names: a type it
-                // lists, or one it inherits (whose path arrived through the base's `__syan_visited`).
+                // lists, or one it inherits (whose path arrived through the base's `__ast_visited`).
                 // An entry would only have repeated what the visitor already said.
                 .or_else(|| {
                     self.reachable.get(&phead.to_string()).and_then(|p| {

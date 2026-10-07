@@ -29,9 +29,9 @@ pub(crate) fn gen_side(
     let id = |s: &str| Ident::new(s, Span::call_site());
     let visit_tr = side.visit_trait();
     let into_vis_tr = side.ty("IntoVisitor");
-    let into_hook_tr = side.ty("__SyanIntoHook");
-    let hook_tr = side.ty("__SyanHook");
-    let driver = side.ty("__SyanDriver");
+    let into_hook_tr = side.ty("__AstIntoHook");
+    let hook_tr = side.ty("__AstHook");
+    let driver = side.ty("__AstDriver");
     let into_vis_fn = side.func("into_visitor");
     let into_hook_fn = side.func("into_hook");
     let visit_method = side.func("visit");
@@ -60,6 +60,7 @@ pub(crate) fn gen_side(
     // from a trait method: that spelling is only stable from 1.75, and every one of these impls
     // knows its concrete adapter anyway.
     let a_vis = fresh_ident("__Visitor", &reserved);
+    let hooks_mod = side.func("__ast_hooks");
     let a_hook = fresh_ident("__Hooked", &reserved);
     let p_ow = fresh_ident("__OW", &reserved);
 
@@ -122,13 +123,13 @@ pub(crate) fn gen_side(
             };
             let default_body = match kind {
                 Container::Seq => quote! {
-                    for __syan_e in #view_trait::#accessor(v) {
-                        self.#method(__syan_e);
+                    for __ast_e in #view_trait::#accessor(v) {
+                        self.#method(__ast_e);
                     }
                 },
                 Container::Opt => quote! {
-                    if let ::core::option::Option::Some(__syan_e) = #view_trait::#accessor(v) {
-                        self.#method(__syan_e);
+                    if let ::core::option::Option::Some(__ast_e) = #view_trait::#accessor(v) {
+                        self.#method(__ast_e);
                     }
                 },
             };
@@ -144,6 +145,10 @@ pub(crate) fn gen_side(
 
     struct S {
         ty: TokenStream,
+        /// The same type, named through this module's `__ast_ty_*` alias. The hook machinery sits in
+        /// a submodule, where a `super::`-relative path the caller wrote would resolve one level too
+        /// high; the alias is a plain name the submodule picks up by glob.
+        ty_in_mod: TokenStream,
         /// The visited type's bare name (e.g. `Expr`), for generated doc comments.
         name: String,
         /// Generated doc for the trait method (`fn visit_<name>`) and the free fn (`visit_<name>`).
@@ -175,6 +180,8 @@ pub(crate) fn gen_side(
             let own = &t.own_use;
             let path = &t.path;
             let ty = quote!( #path #own );
+            let ty_alias = Ident::new(&format!("__ast_ty_{ident}"), Span::call_site());
+            let ty_in_mod = quote!( #ty_alias #own );
             let mut method_params = t.method_params.clone();
             sort_lifetimes_first(&mut method_params);
             let mut free_params: Vec<GenericParam> =
@@ -230,6 +237,7 @@ pub(crate) fn gen_side(
             }
             S {
                 ty,
+                ty_in_mod,
                 name,
                 tdoc,
                 fdoc,
@@ -240,7 +248,7 @@ pub(crate) fn gen_side(
                 trait_where,
                 free_where,
                 hook: side.func(&format!("hook_{}", to_snake(&ident))),
-                hook_struct: side.ty(&format!("__Syan{ident}Hook")),
+                hook_struct: side.ty(&format!("__Ast{ident}Hook")),
                 body: if side.mutable { t.body_mut.clone() } else { t.body.clone() },
             }
         })
@@ -404,7 +412,7 @@ pub(crate) fn gen_side(
     // mirroring the closure-tuple `IntoVisitor` impls.
     let tuple_visit_impls: Vec<TokenStream> = (2..=8usize)
         .map(|n| {
-            let ps: Vec<Ident> = (0..n).map(|k| id(&format!("__SyanV{k}"))).collect();
+            let ps: Vec<Ident> = (0..n).map(|k| id(&format!("__AstV{k}"))).collect();
             let delegates = ps
                 .iter()
                 .enumerate()
@@ -467,17 +475,25 @@ pub(crate) fn gen_side(
     // ancestor declares, so a closure over an inherited type has somewhere to land.
     struct AncHook {
         tr: Ident,
-        path: TokenStream,
+        /// The ancestor, reached through the `__ast_base` relay rather than by the path the caller
+        /// wrote: a `super::`-relative one would mean something else inside the hooks module.
+        path_in_mod: TokenStream,
         g_params: Vec<GenericParam>,
         g_use: TokenStream,
-        methods: Vec<(Ident, Ident, Ident, TokenStream)>,
+        /// `(hook fn, hook struct, visit method, type, type as the hooks module names it)`
+        methods: Vec<(Ident, Ident, Ident, TokenStream, TokenStream)>,
     }
+    let relay_seg = Ident::new(BASE_RELAY, Span::call_site());
     let anc_hooks: Vec<AncHook> = ancestors
         .iter()
         .enumerate()
         .map(|(i, a)| AncHook {
             tr: side.ty(&format!("AncHook{i}")),
-            path: a.path.clone(),
+            path_in_mod: {
+                let hops: Vec<&Ident> = vec![&relay_seg; i + 1];
+                let (first, rest) = hops.split_first().expect("at least one hop");
+                quote!( #first #(:: #rest)* )
+            },
             g_params: a.g_params.clone(),
             g_use: a.g_use.clone(),
             methods: a
@@ -492,11 +508,14 @@ pub(crate) fn gen_side(
                             syn::parse2(quote!(#{&d.ident})).expect("ident is a path")
                         });
                     let args = &d.args;
+                    let alias = Ident::new(&format!("__ast_ty_{}", d.ident), Span::call_site());
+                    let hops = vec![&relay_seg; i + 1];
                     (
                         side.func(&format!("hook_{}", to_snake(&d.ident))),
-                        side.ty(&format!("__Syan{}InhHook", d.ident)),
+                        side.ty(&format!("__Ast{}InhHook", d.ident)),
                         side.method(&d.ident),
                         quote!( #path #args ),
+                        quote!( #(#hops ::)* #alias #args ),
                     )
                 })
                 .collect(),
@@ -508,16 +527,21 @@ pub(crate) fn gen_side(
             type #a_vis: #visit_tr #g_use;
             fn #into_vis_fn(self) -> Self::#a_vis;
         }
-        impl< #(#g_params,)* #p_v: #visit_tr #g_use > #into_vis_tr< #(#g_args,)* () > for #p_v #uw {
-            type #a_vis = Self;
-            fn #into_vis_fn(self) -> Self::#a_vis { self }
-        }
 
         // Closures: shallow Hook + single-pass Driver. These are the closure adapters' own
-        // machinery — a user names `IntoVisitor` (via `node.visit(..)`), never these. They are
-        // `pub` because `IntoVisitor` reports its result as an associated type and a public trait
-        // cannot name a private one; `#[doc(hidden)]` keeps them out of the docs, and the `__Syan`
-        // prefix out of the way of a `use path::to::visit::*;`.
+        // machinery — a user names `IntoVisitor` (via `node.visit(..)`), never these. They have to
+        // be `pub`, since `IntoVisitor` reports its result as an associated type and a public trait
+        // cannot name a private one. Keeping them in a module of their own is what stops a
+        // `use path::to::visit::*;` from pulling them in: a glob takes the module's *name*, not its
+        // contents, so one hidden name is imported instead of a dozen.
+        #[doc(hidden)]
+        pub mod #hooks_mod {
+            use super::*;
+
+            impl< #(#g_params,)* #p_v: #visit_tr #g_use > #into_vis_tr< #(#g_args,)* () > for #p_v #uw {
+                type #a_vis = Self;
+                fn #into_vis_fn(self) -> Self::#a_vis { self }
+            }
         // The traits chain the way the visitors do: an ancestor's `Visit` has the next one up as a
         // supertrait, so proving `Driver<H>` visits at one level needs `H` to answer every level
         // above it too. Each ancestor's parameters are a subset of the ones below, so the bound is
@@ -527,7 +551,7 @@ pub(crate) fn gen_side(
             pub trait #{&h.tr}< #(for p in &h.g_params) { #p, } >
                 #(if let Some(up) = anc_hooks.get(i + 1)) { : #{&up.tr} #{&up.g_use} }
             {
-                #(for (hook, _, _, ty) in &h.methods) {
+                #(for (hook, _, _, _, ty) in &h.methods) {
                     fn #hook(&mut self, i: #amp #ty) { let _ = i; }
                 }
             }
@@ -535,7 +559,7 @@ pub(crate) fn gen_side(
         #[doc(hidden)]
         pub trait #hook_tr #g_def #(if let Some(h0) = anc_hooks.first()) { : #{&h0.tr} #{&h0.g_use} } #uw {
             #(for s in &sides) {
-                fn #{&s.hook}(&mut self, i: #amp #{&s.ty}) { let _ = i; }
+                fn #{&s.hook}(&mut self, i: #amp #{&s.ty_in_mod}) { let _ = i; }
             }
         }
         #[doc(hidden)]
@@ -548,7 +572,7 @@ pub(crate) fn gen_side(
         pub struct #driver<#p_h>(pub #p_h);
         impl< #(#g_params,)* #p_h: #hook_tr #g_use > #visit_tr #g_use for #driver<#p_h> #uw {
             #(for s in &sides) {
-                fn #{&s.method}(&mut self, i: #amp #{&s.ty}) {
+                fn #{&s.method}(&mut self, i: #amp #{&s.ty_in_mod}) {
                     self.0.#{&s.hook}(i);
                     #{&s.method}(self, i);
                 }
@@ -559,12 +583,12 @@ pub(crate) fn gen_side(
         // params (+ the wrapped hook) so a wider new-union param is not an unconstrained impl param.
         #(for h in &anc_hooks) {
             impl< #(for p in &h.g_params) { #p, } #p_h: #{&h.tr} #{&h.g_use} >
-                #{&h.path}::#visit_tr #{&h.g_use} for #driver<#p_h>
+                #{&h.path_in_mod}::#visit_tr #{&h.g_use} for #driver<#p_h>
             {
-                #(for (hook, _, method, ty) in &h.methods) {
+                #(for (hook, _, method, _, ty) in &h.methods) {
                     fn #method(&mut self, i: #amp #ty) {
                         self.0.#hook(i);
-                        #{&h.path}::#method(self, i);
+                        #{&h.path_in_mod}::#method(self, i);
                     }
                 }
             }
@@ -580,7 +604,7 @@ pub(crate) fn gen_side(
             }
         }
         #(for (hi, h) in anc_hooks.iter().enumerate()) {
-            #(for (hook, hook_struct, _, ty) in &h.methods) {
+            #(for (hook, hook_struct, _, _, ty) in &h.methods) {
                 #[doc(hidden)]
                 pub struct #hook_struct<#p_f>(pub #p_f);
                 impl< #(for p in &h.g_params) { #p, } #p_f: ::core::ops::FnMut( #amp #ty ) >
@@ -624,19 +648,19 @@ pub(crate) fn gen_side(
         #(for s in &sides) {
             #[doc(hidden)]
             pub struct #{&s.hook_struct}<#p_f>(pub #p_f);
-            impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #{&s.ty} ) >
+            impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #{&s.ty_in_mod} ) >
                 #hook_tr #g_use for #{&s.hook_struct}<#p_f> #uw
             {
-                fn #{&s.hook}(&mut self, i: #amp #{&s.ty}) { (self.0)(i); }
+                fn #{&s.hook}(&mut self, i: #amp #{&s.ty_in_mod}) { (self.0)(i); }
             }
-            impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #{&s.ty} ) >
-                #into_hook_tr< #(#g_args,)* #{&s.ty} > for #p_f #uw
+            impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #{&s.ty_in_mod} ) >
+                #into_hook_tr< #(#g_args,)* #{&s.ty_in_mod} > for #p_f #uw
             {
                 type #a_hook = #{&s.hook_struct}<#p_f>;
                 fn #into_hook_fn(self) -> Self::#a_hook { #{&s.hook_struct}(self) }
             }
-            impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #{&s.ty} ) >
-                #into_vis_tr< #(#g_args,)* #{&s.ty} > for #p_f #uw
+            impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #{&s.ty_in_mod} ) >
+                #into_vis_tr< #(#g_args,)* #{&s.ty_in_mod} > for #p_f #uw
             {
                 type #a_vis = #driver<#{&s.hook_struct}<#p_f>>;
                 fn #into_vis_fn(self) -> Self::#a_vis { #driver(#{&s.hook_struct}(self)) }
@@ -649,7 +673,7 @@ pub(crate) fn gen_side(
             #hook_tr #g_use for ( #p_a, #p_b ) #uw
         {
             #(for s in &sides) {
-                fn #{&s.hook}(&mut self, i: #amp #{&s.ty}) {
+                fn #{&s.hook}(&mut self, i: #amp #{&s.ty_in_mod}) {
                     self.0.#{&s.hook}(i);
                     self.1.#{&s.hook}(i);
                 }
@@ -659,7 +683,7 @@ pub(crate) fn gen_side(
             impl< #(for p in &h.g_params) { #p, } #p_a: #{&h.tr} #{&h.g_use}, #p_b: #{&h.tr} #{&h.g_use} >
                 #{&h.tr} #{&h.g_use} for ( #p_a, #p_b )
             {
-                #(for (hook, _, _, ty) in &h.methods) {
+                #(for (hook, _, _, _, ty) in &h.methods) {
                     fn #hook(&mut self, i: #amp #ty) {
                         self.0.#hook(i);
                         self.1.#hook(i);
@@ -668,6 +692,7 @@ pub(crate) fn gen_side(
             }
         }
         #(for imp in &tup) { #imp }
+        } // end mod #hooks_mod
         } // end #(if !struct_only) — closure/Driver machinery off for a recurse base
     };
 

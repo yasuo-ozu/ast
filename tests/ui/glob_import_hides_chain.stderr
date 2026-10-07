@@ -1,0 +1,12 @@
+error: cannot find macro `impl_chain` in this scope
+  --> tests/ui/glob_import_hides_chain.rs:35:1
+   |
+35 | impl_chain!(top; P);
+   | ^^^^^^^^^^
+   |
+help: consider importing one of these macros
+   |
+ 5 + use crate::__ast_chain::impl_chain;
+   |
+ 5 + use crate::base::__ast_chain::impl_chain;
+   |

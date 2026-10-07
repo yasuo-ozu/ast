@@ -1,0 +1,5 @@
+error: two visited types share the last segment `Foo` (`crate::a::Foo` vs `crate::b::Foo`); their generated `visit_*`/`*Hook` names would collide — give them distinct final idents
+  --> tests/ui/visited_collision.rs:26:41
+   |
+26 |     ast::visit::visitor!(crate::a::Foo, crate::b::Foo);
+   |                                         ^^^^^^^^^^^^^

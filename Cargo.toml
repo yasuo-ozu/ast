@@ -1,0 +1,17 @@
+[package]
+name = "ast"
+version = "0.1.0"
+edition = "2021"
+description = "Walk a derived syntax tree: the Ast derive and the visitor! generator"
+license = "MIT"
+authors = ["Yasuo Ozu <yasuo@ozu.email>"]
+repository = "https://github.com/yasuo-ozu/ast"
+
+[workspace]
+members = ["macro"]
+
+[dependencies]
+ast-macro = { path = "macro", version = "0.1.0" }
+
+[dev-dependencies]
+trybuild = "1.0"

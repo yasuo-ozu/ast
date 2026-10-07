@@ -1,0 +1,22 @@
+[package]
+name = "ast-macro"
+version = "0.1.0"
+edition = "2021"
+description = "Proc macros for the `ast` crate"
+license = "MIT"
+authors = ["Yasuo Ozu <yasuo@ozu.email>"]
+repository = "https://github.com/yasuo-ozu/ast"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+template-quote = "0.4"
+proc-macro-error = { version = "1.0", default-features = false }
+type-leak = "0.2.0"
+
+[dependencies.syn]
+version = "2.0"
+features = ["full", "extra-traits", "visit", "visit-mut", "parsing", "printing"]

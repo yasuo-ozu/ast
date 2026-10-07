@@ -3,7 +3,7 @@
 
 // Basic descent through Box; struct visitors, single closures, tuples of closures.
 mod basic {
-    use ast::visit::Ast;
+    use ast::Ast;
     use core::marker::PhantomData;
 
     #[derive(Debug, Ast)]
@@ -21,7 +21,7 @@ mod basic {
     }
 
     pub mod visit {
-        ast::visit::visitor!(super::Expr, super::Stmt);
+        ast::visitor!(super::Expr, super::Stmt);
     }
 
     fn sample() -> Expr<()> {
@@ -77,7 +77,7 @@ mod basic {
 
 // visit_mut mirror: mutate nodes in place via closures and struct visitors.
 mod mutable {
-    use ast::visit::Ast;
+    use ast::Ast;
     use core::marker::PhantomData;
 
     #[derive(Debug, Ast)]
@@ -87,7 +87,7 @@ mod mutable {
     }
 
     pub mod visit {
-        ast::visit::visitor!(super::Expr);
+        ast::visitor!(super::Expr);
     }
 
     fn sample() -> Expr<()> {
@@ -141,7 +141,7 @@ mod mutable {
 // Hygiene: visited types may name params/fields like the generated machinery (`__V`, `this`, `i`).
 #[allow(non_camel_case_types)]
 mod hygiene {
-    use ast::visit::Ast;
+    use ast::Ast;
     use core::marker::PhantomData;
 
     #[derive(Debug, Ast)]
@@ -151,7 +151,7 @@ mod hygiene {
     }
 
     pub mod visit {
-        ast::visit::visitor!(crate::hygiene::Node);
+        ast::visitor!(crate::hygiene::Node);
     }
 
     type N = Node<(), (), (), (), (), ()>;
@@ -175,7 +175,7 @@ mod hygiene {
     }
 
     pub mod vtup {
-        ast::visit::visitor!(crate::hygiene::Tup);
+        ast::visitor!(crate::hygiene::Tup);
     }
 
     type T = Tup<(), ()>;
@@ -206,7 +206,7 @@ mod hygiene {
     }
 
     pub mod vnames {
-        ast::visit::visitor!(crate::hygiene::Names, crate::hygiene::Leaf);
+        ast::visitor!(crate::hygiene::Names, crate::hygiene::Leaf);
     }
 
     #[test]
@@ -245,7 +245,7 @@ mod local_types {
 
     mod ast {
         use super::helper::Local;
-        use ast::visit::Ast;
+        use ast::Ast;
         use core::marker::PhantomData;
 
         // `Local` is intentionally a leaf; `Rec` is followed via implicit self-recursion.
@@ -258,7 +258,7 @@ mod local_types {
     }
 
     mod vis {
-        ast::visit::visitor!(super::ast::Expr);
+        ast::visitor!(super::ast::Expr);
     }
 
     #[test]
@@ -275,7 +275,7 @@ mod local_types {
 // A visited type's `where`-clause is threaded onto every generated item that names the type.
 #[allow(dead_code)]
 mod where_clause {
-    use ast::visit::Ast;
+    use ast::Ast;
     use core::marker::PhantomData;
 
     pub trait Bound {}
@@ -294,7 +294,7 @@ mod where_clause {
     }
 
     pub mod v {
-        ast::visit::visitor!(crate::where_clause::Expr);
+        ast::visitor!(crate::where_clause::Expr);
     }
 
     #[test]
@@ -308,7 +308,7 @@ mod where_clause {
 
 // A single visitor over types with different generic arities; the trait is keyed on the union.
 mod generics {
-    use ast::visit::Ast;
+    use ast::Ast;
     use core::marker::PhantomData;
 
     #[derive(Ast)]
@@ -325,7 +325,7 @@ mod generics {
     }
 
     pub mod visit {
-        ast::visit::visitor!(super::Expr, super::BinOp);
+        ast::visitor!(super::Expr, super::BinOp);
     }
 
     #[test]
@@ -351,7 +351,7 @@ mod generics {
 // A where-bounded param not shared by all visited types becomes a per-method generic (struct-only).
 #[allow(dead_code)]
 mod union_where_unshared {
-    use ast::visit::Ast;
+    use ast::Ast;
     use core::marker::PhantomData;
 
     pub trait Bound {}
@@ -375,7 +375,7 @@ mod union_where_unshared {
         // The generated `where S: Bound` lands here, so the user trait must be in scope (a where-bound
         // naming a user trait by bare path needs importing).
         use crate::union_where_unshared::Bound;
-        ast::visit::visitor!(
+        ast::visitor!(
             crate::union_where_unshared::Bounded,
             crate::union_where_unshared::Plain
         );

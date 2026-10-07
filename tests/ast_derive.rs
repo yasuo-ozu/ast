@@ -1,7 +1,7 @@
 //! Stage 2: `#[derive(Ast)]` emits the marker impl, the metadata callback macro, and the
 //! macro-namespace re-export under the type's own name.
 
-use ast::visit::Ast;
+use ast::Ast;
 use core::marker::PhantomData;
 
 #[derive(Ast)]
@@ -49,7 +49,7 @@ fn marker_trait_is_implemented() {
 fn repeater_is_implemented_on_the_type_itself() {
     // `#[derive(Ast)]` impls `Repeater<N>` on the AST type directly (no separate leaker host).
     // `Wrap { inner: Expr<S> }` has one context-dependent field, so `Repeater<0>` resolves.
-    fn leaked0<T: ast::visit::Repeater<0>>() -> core::marker::PhantomData<T::Type> {
+    fn leaked0<T: ast::Repeater<0>>() -> core::marker::PhantomData<T::Type> {
         core::marker::PhantomData
     }
     let _ = leaked0::<Wrap<()>>();

@@ -4,7 +4,7 @@
 //! working at depth, and when the extender carries parameters its ancestors never had.
 #![allow(dead_code)]
 
-use ast::visit::Ast;
+use ast::Ast;
 use core::marker::PhantomData;
 
 mod deep {
@@ -36,19 +36,19 @@ mod deep {
     }
 
     pub mod v1 {
-        ast::visit::visitor!(crate::deep::A);
+        ast::visitor!(crate::deep::A);
     }
     pub mod v2 {
-        ast::visit::visitor!(crate::deep::v1 => crate::deep::B);
+        ast::visitor!(crate::deep::v1 => crate::deep::B);
     }
     pub mod v3 {
-        ast::visit::visitor!(crate::deep::v2 => crate::deep::C);
+        ast::visitor!(crate::deep::v2 => crate::deep::C);
     }
     pub mod v4 {
-        ast::visit::visitor!(crate::deep::v3 => crate::deep::D);
+        ast::visitor!(crate::deep::v3 => crate::deep::D);
     }
     pub mod v5 {
-        ast::visit::visitor!(crate::deep::v4 => crate::deep::E);
+        ast::visitor!(crate::deep::v4 => crate::deep::E);
     }
 
     fn sample() -> E<()> {
@@ -127,10 +127,10 @@ mod widened {
     }
 
     pub mod base {
-        ast::visit::visitor!(crate::widened::Type, crate::widened::Expr);
+        ast::visitor!(crate::widened::Type, crate::widened::Expr);
     }
     pub mod top {
-        ast::visit::visitor!(crate::widened::base => crate::widened::Item);
+        ast::visitor!(crate::widened::base => crate::widened::Item);
     }
 
     fn sample() -> Item<(), u8> {

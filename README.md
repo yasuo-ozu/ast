@@ -6,7 +6,7 @@ Put `#[derive(Ast)]` on your nodes, list them in `visitor!`, and you get a visit
 `visit_*` method per type, each with a body that already descends.
 
 ```rust
-use ast::visit::Ast;
+use ast::Ast;
 
 #[derive(Ast)]
 pub enum Expr {
@@ -16,24 +16,42 @@ pub enum Expr {
 }
 
 pub mod visit {
-    ast::visit::visitor!(crate::Expr);
+    ast::visitor!(crate::Expr);
+}
+
+fn main() {
+    let e = Expr::Many(vec![Expr::Lit(1), Expr::Neg(Box::new(Expr::Lit(2)))]);
+
+    // A closure is the short way in. It runs for every node of the type its argument names.
+    let mut n = 0;
+    e.visit(|_: &Expr| n += 1);
+    assert_eq!(n, 4);
 }
 ```
 
-## Visiting
+## Keeping state
 
-A closure is the short way in. It runs for every node of the type its argument names:
-
-```rust
-let mut n = 0;
-expr.visit(|_: &Expr| n += 1);
-```
-
-A struct lets you keep state. Override the methods you care about, and call the free function to
-keep descending — or don't, to prune:
+A struct lets you carry something along. Override the methods you care about and call the free
+function to keep descending — or don't, to prune.
 
 ```rust
-struct Depth { max: usize, at: usize }
+use ast::Ast;
+
+#[derive(Ast)]
+pub enum Expr {
+    Lit(u32),
+    Neg(Box<Expr>),
+}
+
+pub mod visit {
+    ast::visitor!(crate::Expr);
+}
+
+#[derive(Default)]
+struct Depth {
+    max: usize,
+    at: usize,
+}
 
 impl visit::Visit for Depth {
     fn visit_expr(&mut self, i: &Expr) {
@@ -43,20 +61,49 @@ impl visit::Visit for Depth {
         self.at -= 1;
     }
 }
+impl visit::VisitMut for Depth {}
+
+fn main() {
+    let mut d = Depth::default();
+    Expr::Neg(Box::new(Expr::Lit(1))).visit(&mut d);
+    assert_eq!(d.max, 2);
+}
 ```
 
-`visit_mut` is the same with `&mut`.
+`visit_mut` is the same with `&mut`. A tuple of two to eight runs several at once, and may hold
+closures, visitors, or both — `e.visit((|x: &Expr| .., &mut pass))`. Each element walks the tree
+itself.
 
 ## Editing a list
 
 A `#[seq]` field hands you the slot instead of one element, so you can see an element's index and
-its neighbours — and, on the `mut` side, change the list:
+its neighbours — and, on the `mut` side, change the list.
 
 ```rust
+use ast::{Ast, SeqView};
+
+#[derive(Ast)]
+pub enum Expr {
+    Lit(u32),
+    Many(#[seq] Vec<Expr>),
+}
+
+pub mod visit {
+    ast::visitor!(crate::Expr);
+}
+
+struct DropLits;
+impl visit::Visit for DropLits {}
 impl visit::VisitMut for DropLits {
     fn visit_expr_seq_mut<V: SeqView<Expr>>(&mut self, v: &mut V) {
         v.retain_mut(|e| !matches!(e, Expr::Lit(_)));
     }
+}
+
+fn main() {
+    let mut e = Expr::Many(vec![Expr::Lit(1), Expr::Many(vec![])]);
+    e.visit_mut(&mut DropLits);
+    assert!(matches!(&e, Expr::Many(v) if v.len() == 1));
 }
 ```
 
@@ -70,25 +117,52 @@ walk entirely.
 
 ## Extending a visitor
 
-List a type in one `visitor!` only. To cover more, extend the visitor you have:
+List a type in one `visitor!` only. To cover more, extend the visitor you have.
 
 ```rust
-pub mod base { ast::visit::visitor!(crate::Expr); }
-pub mod ext  { ast::visit::visitor!(crate::base => crate::Stmt); }
+use ast::Ast;
+
+#[derive(Ast)]
+pub enum Expr {
+    Lit(u32),
+}
+
+#[derive(Ast)]
+#[subast(crate::Expr)]
+pub struct Stmt {
+    pub e: Expr,
+}
+
+pub mod base {
+    ast::visitor!(crate::Expr);
+}
+pub mod ext {
+    ast::visitor!(crate::base => crate::Stmt);
+}
+
+fn main() {
+    let s = Stmt { e: Expr::Lit(1) };
+
+    // A closure reaches an inherited type as readily as one of this visitor's own.
+    let mut n = 0;
+    s.visit(|_: &Expr| n += 1);
+    assert_eq!(n, 1);
+}
 ```
 
 `base::Visit` becomes a supertrait of `ext::Visit`, so a pass written against the base still runs in
-the extended walk.
+the extended walk. `ext::impl_chain!(ext; MyPass)` writes the ancestor impls that otherwise have to
+be spelled out.
 
 ## Using it through another crate
 
 The code a node emits names `::ast`. If you reach this crate through a facade that re-exports it,
 name that instead:
 
-```rust
+```rust,ignore
 #[derive(Ast)]
 #[ast(::my_crate)]
-pub enum Expr { .. }
+pub enum Expr { Lit(u32) }
 ```
 
 `visitor!` needs no such hint — it finds the crate on its own.

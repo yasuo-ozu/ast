@@ -2,7 +2,7 @@
 //! supertrait impls an extending visitor would otherwise spell out by hand.
 #![allow(dead_code)]
 
-use ast::visit::Ast;
+use ast::Ast;
 use core::marker::PhantomData;
 
 #[derive(Ast)]
@@ -29,13 +29,13 @@ pub enum Item<S> {
 }
 
 pub mod base {
-    ast::visit::visitor!(crate::Type, crate::Expr);
+    ast::visitor!(crate::Type, crate::Expr);
 }
 pub mod mid {
-    ast::visit::visitor!(crate::base => crate::Stmt);
+    ast::visitor!(crate::base => crate::Stmt);
 }
 pub mod top {
-    ast::visit::visitor!(crate::mid => crate::Item);
+    ast::visitor!(crate::mid => crate::Item);
 }
 
 fn sample() -> Item<()> {

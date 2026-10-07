@@ -5,7 +5,7 @@
 //! levels up, and from an entry point partway down the chain.
 #![allow(dead_code)]
 
-use ast::visit::Ast;
+use ast::Ast;
 use core::marker::PhantomData;
 
 #[derive(Ast)]
@@ -29,13 +29,13 @@ pub struct Item<S> {
 }
 
 pub mod base {
-    ast::visit::visitor!(crate::Type, crate::Expr);
+    ast::visitor!(crate::Type, crate::Expr);
 }
 pub mod mid {
-    ast::visit::visitor!(crate::base => crate::Stmt);
+    ast::visitor!(crate::base => crate::Stmt);
 }
 pub mod top {
-    ast::visit::visitor!(crate::mid => crate::Item);
+    ast::visitor!(crate::mid => crate::Item);
 }
 
 fn sample() -> Item<()> {
@@ -197,4 +197,23 @@ fn passes_from_different_levels_in_one_tuple() {
     let mut pair = (BaseOnly::default(), Counts::default());
     sample().visit(&mut pair);
     assert_eq!((pair.0.types, pair.1.items), (1, 1));
+}
+
+// A tuple may hold either kind, or both: each element converts on its own, and the tuple of the
+// results is a visitor by the forwarding impls.
+
+#[test]
+fn tuple_mixes_a_closure_and_a_visitor() {
+    let mut n = 0;
+    let mut c = Counts::default();
+    sample().visit((|_: &Type<()>| n += 1, &mut c));
+    assert_eq!((n, c.items), (1, 1));
+}
+
+#[test]
+fn tuple_mixes_three_ways() {
+    let mut n = 0;
+    let (mut a, mut b) = (Counts::default(), BaseOnly::default());
+    sample().visit((|_: &Stmt<()>| n += 1, &mut a, &mut b));
+    assert_eq!((n, a.items, b.types), (1, 1, 1));
 }

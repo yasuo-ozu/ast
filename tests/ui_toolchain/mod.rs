@@ -14,7 +14,7 @@
 ///
 /// ```text
 /// TRYBUILD=overwrite cargo +<version> test --all-features \
-///     --test macro_audit_test --test recurse_core --test visitor_diagnostics
+///     --test diagnostics
 /// ```
 ///
 /// Keep it in step with the `ui` job in `.github/workflows/ci.yml`.

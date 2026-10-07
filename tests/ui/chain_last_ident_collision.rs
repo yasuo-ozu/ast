@@ -2,13 +2,13 @@
 //! one inheritance chain. Neither the per-`visitor!` check nor the `#[subast]` ones see them
 //! together, so this is where the chain-wide check has to catch it.
 use core::marker::PhantomData;
-use ast::visit::Ast;
-pub mod m1 { #[derive(ast::visit::Ast, Debug)] pub enum Foo<S> { A(core::marker::PhantomData<S>) } }
-pub mod m2 { #[derive(ast::visit::Ast, Debug)] pub enum Foo<S> { B(core::marker::PhantomData<S>) } }
+use ast::Ast;
+pub mod m1 { #[derive(ast::Ast, Debug)] pub enum Foo<S> { A(core::marker::PhantomData<S>) } }
+pub mod m2 { #[derive(ast::Ast, Debug)] pub enum Foo<S> { B(core::marker::PhantomData<S>) } }
 #[derive(Ast, Debug)]
 pub struct Root<S> { pub p: PhantomData<S> }
-pub mod v1 { ast::visit::visitor!(crate::m1::Foo); }
-pub mod v2 { ast::visit::visitor!(crate::v1 => crate::m2::Foo); }
-pub mod v3 { ast::visit::visitor!(crate::v2 => crate::Root); }
+pub mod v1 { ast::visitor!(crate::m1::Foo); }
+pub mod v2 { ast::visitor!(crate::v1 => crate::m2::Foo); }
+pub mod v3 { ast::visitor!(crate::v2 => crate::Root); }
 
 fn main() {}

@@ -4,7 +4,7 @@
 //! `visit_leaf_mut`). Overriding `visit_leaf_seq_mut` / `visit_leaf_opt_mut` is a "not a member of trait" error.
 
 use core::marker::PhantomData;
-use ast::visit::{Ast, OptView, SeqView};
+use ast::{Ast, OptView, SeqView};
 
 #[derive(Ast)]
 pub enum Leaf<S> {
@@ -19,7 +19,7 @@ pub struct Wrap<S> {
 }
 
 pub mod vis {
-    ast::visit::visitor!(crate::Wrap, crate::Leaf);
+    ast::visitor!(crate::Wrap, crate::Leaf);
 }
 
 struct V;

@@ -12,6 +12,9 @@ repository = "https://github.com/yasuo-ozu/ast"
 members = ["macro"]
 resolver = "2"
 
+[lib]
+path = "lib.rs"
+
 [build-dependencies]
 version_check = "0.9"
 

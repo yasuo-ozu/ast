@@ -6,7 +6,7 @@
 #![allow(dead_code)]
 
 mod ast {
-    use ast::visit::Ast;
+    use ast::Ast;
 
     #[derive(Debug, Ast)]
     pub enum Node {
@@ -20,7 +20,7 @@ mod ast {
     }
 
     pub mod v {
-        ast::visit::visitor!(crate::ast::Node, crate::ast::Tree);
+        ast::visitor!(crate::ast::Node, crate::ast::Tree);
     }
 }
 
@@ -142,7 +142,7 @@ fn a_tuple_of_visitors_edits_in_place() {
 // them and cannot shadow a name of the caller's own. (`#[doc(hidden)]` alone would not do this — it
 // hides an item from rustdoc while leaving it importable.)
 mod glob_import {
-    use ast::visit::Ast;
+    use ast::Ast;
 
     #[derive(Ast)]
     pub enum Node {
@@ -150,7 +150,7 @@ mod glob_import {
     }
 
     pub mod v {
-        ast::visit::visitor!(super::Node);
+        ast::visitor!(super::Node);
     }
 
     use v::*;

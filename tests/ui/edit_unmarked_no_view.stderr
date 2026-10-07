@@ -1,5 +1,5 @@
 error[E0407]: method `visit_leaf_seq_mut` is not a member of trait `vis::VisitMut`
-  --> tests/ui/visitor_edit_unmarked_no_view.rs:27:5
+  --> tests/ui/edit_unmarked_no_view.rs:27:5
    |
 27 |     fn visit_leaf_seq_mut<W: SeqView<Leaf<S>>>(&mut self, _v: &mut W) {}
    |     ^^^------------------^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -8,7 +8,7 @@ error[E0407]: method `visit_leaf_seq_mut` is not a member of trait `vis::VisitMu
    |     not a member of trait `vis::VisitMut`
 
 error[E0407]: method `visit_leaf_opt_mut` is not a member of trait `vis::VisitMut`
-  --> tests/ui/visitor_edit_unmarked_no_view.rs:28:5
+  --> tests/ui/edit_unmarked_no_view.rs:28:5
    |
 28 |     fn visit_leaf_opt_mut<W: OptView<Leaf<S>>>(&mut self, _v: &mut W) {}
    |     ^^^------------------^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

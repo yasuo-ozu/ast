@@ -3,7 +3,7 @@
 //! unreachable however the visitor is written — a hand-implemented `Visit` would not see them either.
 //! Previously silent: the walk compiled and visited nothing.
 use core::marker::PhantomData;
-use ast::visit::Ast;
+use ast::Ast;
 
 #[derive(Ast)]
 pub struct Qubit<S>(pub i64, pub PhantomData<S>);
@@ -22,7 +22,7 @@ pub struct Stmt<S> {
 }
 
 pub mod v {
-    ast::visit::visitor!(crate::Qubit, crate::Brackets, crate::Stmt);
+    ast::visitor!(crate::Qubit, crate::Brackets, crate::Stmt);
 }
 
 fn main() {

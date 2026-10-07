@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 
 mod a {
     use core::marker::PhantomData;
-    use ast::visit::Ast;
+    use ast::Ast;
     #[derive(Ast)]
     pub enum Foo<S> {
         A(PhantomData<S>),
@@ -15,7 +15,7 @@ mod a {
 
 mod b {
     use core::marker::PhantomData;
-    use ast::visit::Ast;
+    use ast::Ast;
     #[derive(Ast)]
     pub enum Foo<S> {
         B(PhantomData<S>),
@@ -23,7 +23,7 @@ mod b {
 }
 
 pub mod vis {
-    ast::visit::visitor!(crate::a::Foo, crate::b::Foo);
+    ast::visitor!(crate::a::Foo, crate::b::Foo);
 }
 
 fn main() {

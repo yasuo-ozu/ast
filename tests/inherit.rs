@@ -7,7 +7,7 @@
 #![allow(dead_code)]
 
 mod ast {
-    use ast::visit::Ast;
+    use ast::Ast;
 
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Tag(pub i64);
@@ -37,13 +37,13 @@ mod ast {
 use ast::{Leaf, Mid, Tag, Top};
 
 mod base {
-    ast::visit::visitor!(crate::ast::Leaf);
+    ast::visitor!(crate::ast::Leaf);
 }
 mod mid {
-    ast::visit::visitor!(super::base => crate::ast::Mid);
+    ast::visitor!(super::base => crate::ast::Mid);
 }
 mod top {
-    ast::visit::visitor!(super::mid => crate::ast::Top);
+    ast::visitor!(super::mid => crate::ast::Top);
 }
 
 fn a_mid() -> Mid {

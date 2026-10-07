@@ -3,7 +3,7 @@
 //! one of the cycle's types so a method call breaks the recursion.
 
 use core::marker::PhantomData;
-use ast::visit::Ast;
+use ast::Ast;
 
 #[derive(Ast)]
 #[subast(crate::B)]
@@ -21,7 +21,7 @@ pub enum Expr<S> {
 }
 
 pub mod visit {
-    ast::visit::visitor!(super::Expr);
+    ast::visitor!(super::Expr);
 }
 
 fn main() {}

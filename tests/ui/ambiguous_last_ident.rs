@@ -6,7 +6,7 @@
 //! This is the shape behind the old `bug7` regression, where the generated visitor mis-called
 //! `visit_stmt` on the foreign type. It is now refused rather than handled.
 use core::marker::PhantomData;
-use ast::visit::Ast;
+use ast::Ast;
 
 mod other {
     pub struct Stmt;

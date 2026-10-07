@@ -4,7 +4,7 @@
 
 // Drill through a single unlisted intermediate (`Cast`) to reach a visited `Type`.
 mod basic {
-    use ast::visit::Ast;
+    use ast::Ast;
     use core::marker::PhantomData;
 
     #[derive(Debug, Ast)]
@@ -24,7 +24,7 @@ mod basic {
     }
 
     pub mod visit {
-        ast::visit::visitor!(super::Expr, super::Type);
+        ast::visitor!(super::Expr, super::Type);
     }
 
     fn sample() -> Expr<()> {
@@ -80,7 +80,7 @@ mod basic {
 
 // A chain of unlisted intermediates, drilling inside containers, and a finite dead-end.
 mod chain {
-    use ast::visit::Ast;
+    use ast::Ast;
     use core::marker::PhantomData;
 
     // Chain: Expr -> Wrap -> Cast -> Type
@@ -105,7 +105,7 @@ mod chain {
     }
 
     pub mod chain {
-        ast::visit::visitor!(super::Expr, super::Type);
+        ast::visitor!(super::Expr, super::Type);
     }
 
     #[test]
@@ -133,7 +133,7 @@ mod chain {
     }
 
     pub mod container {
-        ast::visit::visitor!(super::Block, super::Leaf);
+        ast::visitor!(super::Block, super::Leaf);
     }
 
     #[test]
@@ -162,7 +162,7 @@ mod chain {
     }
 
     pub mod deadend {
-        ast::visit::visitor!(super::ExprD);
+        ast::visitor!(super::ExprD);
     }
 
     #[test]
@@ -179,11 +179,11 @@ mod chain {
 
 // Regression fixes: aliased #[subast] on a visited type, a user type named `Option`, Box<Option<T>>.
 mod fixes {
-    use ast::visit::Ast;
+    use ast::Ast;
     use core::marker::PhantomData;
 
     mod other {
-        use ast::visit::Ast;
+        use ast::Ast;
         use core::marker::PhantomData;
         #[derive(Debug, Ast)]
         pub enum Real<S> {
@@ -202,7 +202,7 @@ mod fixes {
     }
 
     pub mod va {
-        ast::visit::visitor!(crate::fixes::Expr, crate::fixes::other::Real);
+        ast::visitor!(crate::fixes::Expr, crate::fixes::other::Real);
     }
 
     #[test]
@@ -223,7 +223,7 @@ mod fixes {
 
     mod weird {
         use super::Leaf;
-        use ast::visit::Ast;
+        use ast::Ast;
         // A user type whose name collides with the `Option` container keyword.
         #[derive(Debug, Ast)]
         #[subast(crate::fixes::Leaf)]
@@ -238,7 +238,7 @@ mod fixes {
     }
 
     pub mod vw {
-        ast::visit::visitor!(crate::fixes::Outer, crate::fixes::Leaf);
+        ast::visitor!(crate::fixes::Outer, crate::fixes::Leaf);
     }
 
     #[test]
@@ -266,7 +266,7 @@ mod fixes {
     }
 
     pub mod vh {
-        ast::visit::visitor!(crate::fixes::Holder, crate::fixes::LeafB);
+        ast::visitor!(crate::fixes::Holder, crate::fixes::LeafB);
     }
 
     #[test]
@@ -306,7 +306,7 @@ mod fixes {
 
 // Two same-last-segment intermediates (`a::Cast`/`b::Cast`) fetched distinctly by full path.
 mod paths {
-    use ast::visit::Ast;
+    use ast::Ast;
     use core::marker::PhantomData;
 
     #[derive(Debug, Ast)]
@@ -315,14 +315,14 @@ mod paths {
     }
 
     pub mod a {
-        use ast::visit::Ast;
+        use ast::Ast;
         #[derive(Debug, Ast)]
         #[subast(crate::paths::Type)]
         pub struct Cast<S>(pub crate::paths::Type<S>);
     }
 
     pub mod b {
-        use ast::visit::Ast;
+        use ast::Ast;
         #[derive(Debug, Ast)]
         #[subast(crate::paths::Type)]
         pub struct Cast<S>(pub crate::paths::Type<S>);
@@ -339,7 +339,7 @@ mod paths {
     }
 
     pub mod visit {
-        ast::visit::visitor!(super::Expr, super::Type);
+        ast::visitor!(super::Expr, super::Type);
     }
 
     #[test]

@@ -4,8 +4,8 @@
 mod ui_toolchain;
 
 #[test]
-fn visitor_diagnostics() {
-    if !ui_toolchain::should_run("visitor_diagnostics") {
+fn diagnostics() {
+    if !ui_toolchain::should_run("diagnostics") {
         return;
     }
     let t = trybuild::TestCases::new();
@@ -16,7 +16,7 @@ fn visitor_diagnostics() {
     // The container-edit views (`visit_*_seq`/`visit_*_opt`) are generated ONLY for a field marked
     // `#[seq]`/`#[opt]` (no auto-detection); overriding them for an unmarked field is a "not a member of
     // trait" error.
-    t.compile_fail("tests/ui/visitor_edit_unmarked_no_view.rs");
+    t.compile_fail("tests/ui/edit_unmarked_no_view.rs");
     // Two different paths ending in the same ident inside one definition: the head match is by last
     // segment, so they cannot be told apart.
     t.compile_fail("tests/ui/ambiguous_last_ident.rs");
@@ -24,15 +24,15 @@ fn visitor_diagnostics() {
     // a single node or a single `visitor!(..)` list.
     t.compile_fail("tests/ui/chain_last_ident_collision.rs");
     // A `#[seq]`/`#[opt]` field can't view an inherited (non-targeted) type — clean error, not E0599.
-    t.compile_fail("tests/ui/visitor_edit_seq_inherited.rs");
+    t.compile_fail("tests/ui/edit_seq_inherited.rs");
     // Marker on a non-viewable / container-less / non-visited field → clean abort, not a cryptic trait error.
-    t.compile_fail("tests/ui/visitor_edit_marker_array.rs");
-    t.compile_fail("tests/ui/visitor_edit_marker_noncontainer.rs");
-    t.compile_fail("tests/ui/visitor_edit_marker_unvisited.rs");
+    t.compile_fail("tests/ui/edit_marker_array.rs");
+    t.compile_fail("tests/ui/edit_marker_noncontainer.rs");
+    t.compile_fail("tests/ui/edit_marker_unvisited.rs");
     // A `#[seq]`/`#[opt]` field whose top-level type wraps a container (`Box<Vec<T>>`) is not an edit
     // target — edit views need a bare single container (the field still descends).
-    t.compile_fail("tests/ui/visitor_edit_marker_boxed.rs");
+    t.compile_fail("tests/ui/edit_marker_boxed.rs");
     // Handing a visited type to a generic parameter the node holds but never follows (`Brackets<T, S>`
     // with `items: Vec<T>`) puts those nodes out of reach — previously a silent empty walk.
-    t.compile_fail("tests/ui/visitor_generic_element.rs");
+    t.compile_fail("tests/ui/generic_element.rs");
 }

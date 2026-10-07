@@ -4,7 +4,7 @@
 
 // Nested containers (`Vec<Option<T>>`, `Option<Vec<T>>`, `Vec<Vec<T>>`) are traversed.
 mod nested {
-    use ast::visit::Ast;
+    use ast::Ast;
     use core::marker::PhantomData;
 
     #[derive(Ast)]
@@ -23,7 +23,7 @@ mod nested {
     }
 
     mod v {
-        ast::visit::visitor!(crate::nested::Leaf, crate::nested::Holder);
+        ast::visitor!(crate::nested::Leaf, crate::nested::Holder);
     }
 
     fn leaf<S>(value: i64) -> Leaf<S> {
@@ -74,7 +74,7 @@ mod nested {
 
 // A tuple nested inside a container (`Vec<(A,B)>`, `Option<(A,B)>`, `Box<(A,B)>`) has its elements visited.
 mod container_of_tuple {
-    use ast::visit::Ast;
+    use ast::Ast;
     use core::marker::PhantomData;
 
     #[derive(Ast)]
@@ -93,7 +93,7 @@ mod container_of_tuple {
     }
 
     mod v {
-        ast::visit::visitor!(
+        ast::visitor!(
             crate::container_of_tuple::Leaf,
             crate::container_of_tuple::Holder
         );
@@ -135,7 +135,7 @@ mod container_of_tuple {
 
 // A tuple-typed field is destructured and each element lowered (top-level + nested tuples).
 mod tuple_field {
-    use ast::visit::Ast;
+    use ast::Ast;
     use core::marker::PhantomData;
 
     #[derive(Ast)]
@@ -153,7 +153,7 @@ mod tuple_field {
     }
 
     pub mod v {
-        ast::visit::visitor!(crate::tuple_field::Expr, crate::tuple_field::Ty);
+        ast::visitor!(crate::tuple_field::Expr, crate::tuple_field::Ty);
     }
 
     #[test]

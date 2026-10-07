@@ -1,14 +1,33 @@
-//! Visitor-system support items.
+#![doc = include_str!("README.md")]
 //!
-//! The generated visitor modules and the `#[derive(Ast)]` metadata macros live in user crates;
-//! this module only holds the two cross-crate primitives they rely on:
+//! # What lives here
+//!
+//! The generated visitor modules and the `#[derive(Ast)]` metadata macros live in *your* crate;
+//! this one holds what they rely on:
 //!
 //! * [`Ast`] — an empty marker trait implemented by `#[derive(Ast)]` for every AST node type.
 //! * [`Repeater`] — the `type-leak` indirection trait. `#[derive(Ast)]` emits one
 //!   `impl Repeater<N> for <the AST type>` per field type that depends on the definition's type
-//!   context, so a consumer can name those types portably as
-//!   `<T as ::ast::visit::Repeater<N>>::Type` regardless of which crate/module it expands in.
-//!
+//!   context, so a consumer can name those types portably as `<T as ::ast::Repeater<N>>::Type`
+//!   regardless of which crate or module it expands in.
+//! * [`Walk`]/[`WalkMut`] and the [`SeqView`]/[`OptView`]/[`MapView`] slot views, which the
+//!   generated descent bottoms out in.
+
+#[doc(hidden)]
+pub mod _imp {
+    pub use ast_macro;
+}
+
+/// The crate's own items, under the name the generated code reaches them by.
+///
+/// `visitor!` binds this as `__ast_rt` in the module it expands into, so the code it writes names
+/// the crate through the macro's `$crate` rather than by name — which is what lets a facade
+/// re-export this crate without its users depending on it directly. `use $crate as ..` is not
+/// allowed, so the alias needs a module to point at.
+#[doc(hidden)]
+pub mod visit {
+    pub use super::*;
+}
 
 /// Marks a type as an AST node and emits the metadata [`visitor!`] reads.
 ///
@@ -195,7 +214,7 @@ pub use ast_macro::Ast;
 /// // A visitor behind a wrapper is still a visitor. So is a tuple of them.
 /// impl<__V: Visit> Visit for &mut __V { .. }                       // node.visit(&mut pass)
 /// impl<__V: Visit + ?Sized> Visit for Box<__V> { .. }              // node.visit(Box::new(pass))
-/// impl<__V0: Visit, __V1: Visit> Visit for (__V0, __V1) { .. }     // two passes, one walk
+/// impl<__V0: Visit, __V1: Visit> Visit for (__V0, __V1) { .. }     // two passes
 ///
 /// // What makes a closure a visitor. These names are hidden; you never write them.
 /// impl<__F: FnMut(&crate::Item)> IntoVisitor<crate::Item> for __F {
@@ -378,20 +397,22 @@ pub use ast_macro::Ast;
 /// * **a visitor** — any type that implements `Visit`, by value or by `&mut`.
 /// * **a closure** that takes `&T`, for any type the visitor reaches — one it lists, or one it
 ///   inherits. The argument type picks which node it sees. It runs for every `T` in the tree.
-/// * **a tuple of 2 to 8 closures**. All of them run in one walk.
-/// * **a tuple of 2 to 8 visitors**. The same: each one sees every node.
+/// * **a tuple of 2 to 8** of any of the above, in any combination — closures, visitors, or both.
+///   Each one sees every node.
 /// * **a `Box` around a visitor**, by value.
 ///
 /// ```ignore
 /// node.visit(&mut pass);                          // a visitor
 /// node.visit(Box::new(pass));                     // boxed
 /// node.visit(|e: &Expr| exprs += 1);              // one closure
-/// node.visit((|e: &Expr| .., |t: &Type| ..));     // two closures, one walk
-/// node.visit(&mut (first, second));               // two visitors, one walk
+/// node.visit((|e: &Expr| .., |t: &Type| ..));     // two closures
+/// node.visit(&mut (first, second));               // two visitors
+/// node.visit((|e: &Expr| .., &mut pass));         // one of each
 /// ```
 ///
-/// A tuple must be all closures or all visitors. You cannot mix the two in one tuple. If you need
-/// both, call `visit` twice, or wrap the closure in a visitor of your own.
+/// Every element of a tuple walks the tree itself, so a tuple of `n` is `n` walks. That is what
+/// makes the kinds interchangeable: a visitor descends through its own `visit_*`, and nothing can
+/// ask it to observe a node without descending. One closure on its own is a single walk.
 ///
 /// A type of your own becomes a visitor as soon as it forwards `Visit`, which takes one line. It
 /// then goes anywhere `Box` goes.
@@ -419,9 +440,6 @@ macro_rules! visitor {
         $crate::_imp::ast_macro::__visitor_entry! { @root { $crate } $($t)* }
     };
 }
-
-#[doc(hidden)]
-pub use crate::visitor;
 
 /// Marker trait implemented by every type carrying `#[derive(Ast)]`.
 ///

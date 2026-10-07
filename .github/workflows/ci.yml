@@ -21,7 +21,7 @@ jobs:
           rustup toolchain install stable --profile minimal --no-self-update
           rustup default stable
           rustc --version
-      - run: cargo test --workspace --all-features -- --skip visitor_diagnostics
+      - run: cargo test --workspace --all-features -- --skip diagnostics
 
   # rustc rewords diagnostics and shortens type paths between releases, so these
   # fixtures are only meaningful on the toolchain they were blessed against.
@@ -35,7 +35,7 @@ jobs:
           rustup toolchain install 1.90.0 --profile minimal --no-self-update
           rustup default 1.90.0
           rustc --version
-      - run: cargo test --test visitor_diagnostics
+      - run: cargo test --test diagnostics
 
   fmt:
     name: Rustfmt

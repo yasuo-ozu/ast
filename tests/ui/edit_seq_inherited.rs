@@ -3,7 +3,7 @@
 //! type (`Item`, owned by `base`) is a clean error, not a cryptic "no method `visit_item_seq`" downstream.
 
 use core::marker::PhantomData;
-use ast::visit::Ast;
+use ast::Ast;
 
 #[derive(Ast)]
 pub enum Item<S> {
@@ -18,11 +18,11 @@ pub struct List<S> {
 }
 
 pub mod base {
-    ast::visit::visitor!(crate::Item);
+    ast::visitor!(crate::Item);
 }
 
 pub mod ext {
-    ast::visit::visitor!(crate::base => crate::List);
+    ast::visitor!(crate::base => crate::List);
 }
 
 fn main() {

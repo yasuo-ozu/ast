@@ -1,4 +1,4 @@
-//! The descent goes through [`Walk`](ast::visit::Walk): the container impls in `syan::visit` peel the
+//! The descent goes through [`Walk`](ast::Walk): the container impls in `syan::visit` peel the
 //! wrapper layers and each visited node's generated impl bottoms out in its `visit_*` method.
 //!
 //! Each call carries an indicator computed from the field's shape, so the container impls stay generic
@@ -8,7 +8,7 @@
 #![allow(dead_code)]
 
 mod ast {
-    use ast::visit::Ast;
+    use ast::Ast;
 
     /// A consumer leaf that shares a tuple with a followed node — the `Vec<(Length, Line)>` shape.
     #[derive(Debug, Clone, Copy, PartialEq)]
@@ -30,7 +30,7 @@ mod ast {
     }
 
     pub mod v {
-        ast::visit::visitor!(crate::ast::Line, crate::ast::Page);
+        ast::visitor!(crate::ast::Line, crate::ast::Page);
     }
 }
 
@@ -87,7 +87,7 @@ fn a_node_counts_itself_and_its_children() {
 
 // ── when two tuple shapes of one arity overlap ───────────────────────────────────────────────────
 mod collides {
-    use ast::visit::Ast;
+    use ast::Ast;
 
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Mark(pub i64);
@@ -107,7 +107,7 @@ mod collides {
     }
 
     pub mod v {
-        ast::visit::visitor!(crate::collides::Node, crate::collides::Holder);
+        ast::visitor!(crate::collides::Node, crate::collides::Holder);
     }
 
     #[test]

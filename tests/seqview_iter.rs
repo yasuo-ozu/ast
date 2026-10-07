@@ -4,7 +4,7 @@
 //! level.
 //! In-place iteration via `view_iter[_mut]`; structural changes via `retain_mut`/`push`/`insert`/`remove`.
 
-use ast::visit::{OptView, SeqView};
+use ast::{OptView, SeqView};
 
 #[test]
 fn iter_reads_every_element() {

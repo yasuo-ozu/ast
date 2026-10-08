@@ -1,20 +1,16 @@
 error[E0407]: method `visit_leaf_seq_mut` is not a member of trait `vis::VisitMut`
   --> tests/ui/edit_unmarked_no_view.rs:27:5
    |
-27 |       fn visit_leaf_seq_mut<'v, W: SeqView<'v, Leaf<S>>>(&mut self, _v: &'v mut W)
-   |       ^  ------------------ help: there is an associated function with a similar name: `visit_leaf_mut`
-   |  _____|
-   | |
-28 | |     where
-29 | |         S: 'v,
-30 | |     {
-31 | |     }
-   | |_____^ not a member of trait `vis::VisitMut`
+27 |     fn visit_leaf_seq_mut<W: SeqView<Leaf<S>>>(&mut self, _v: &mut W) {}
+   |     ^^^------------------^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |     |  |
+   |     |  help: there is an associated function with a similar name: `visit_leaf_mut`
+   |     not a member of trait `vis::VisitMut`
 
 error[E0407]: method `visit_leaf_opt_mut` is not a member of trait `vis::VisitMut`
-  --> tests/ui/edit_unmarked_no_view.rs:32:5
+  --> tests/ui/edit_unmarked_no_view.rs:28:5
    |
-32 |     fn visit_leaf_opt_mut<W: OptView<Leaf<S>>>(&mut self, _v: &mut W) {}
+28 |     fn visit_leaf_opt_mut<W: OptView<Leaf<S>>>(&mut self, _v: &mut W) {}
    |     ^^^------------------^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |     |  |
    |     |  help: there is an associated function with a similar name: `visit_leaf_mut`

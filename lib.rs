@@ -10,7 +10,7 @@
 //!   `impl Repeater<N> for <the AST type>` per field type that depends on the definition's type
 //!   context, so a consumer can name those types portably as `<T as ::ast::Repeater<N>>::Type`
 //!   regardless of which crate or module it expands in.
-//! * [`walk::Walk`]/[`walk::WalkMut`] and the [`SeqView`]/[`OptView`]/[`MapView`] slot views, which the
+//! * [`walk::Walk`]/[`walk::WalkMut`], the [`SeqView`]/[`OptView`] slot views and [`View`], which the
 //!   generated descent bottoms out in.
 
 #[doc(hidden)]
@@ -30,7 +30,7 @@ pub mod visit {
     // (making `ast::visit::visit::visit::…` a valid path) and `_imp`. This is the whole surface the
     // generated code reaches — `#root::visit::{Ast, Repeater}` from the derive, `__ast_rt::{..}`
     // from `visitor!`.
-    pub use super::{visitor, walk, Ast, MapView, OptView, Repeater, SeqView};
+    pub use super::{visitor, walk, Ast, OptView, Repeater, SeqView, View};
 }
 
 /// Marks a type as an AST node and emits the metadata [`visitor!`] reads.
@@ -121,8 +121,9 @@ pub use ast_macro::Ast;
 ///     fn visit_item(&mut self, i: &Item) { visit_item(self, i) }
 ///
 ///     // Only because a field is marked `#[seq]`. It takes the list, not an element.
-///     fn visit_item_seq<'v, V: SeqView<'v, Item>>(&mut self, v: &'v V) {
-///         for e in v.seq_iter() { self.visit_item(e); }
+///     fn visit_item_seq<V: SeqView<Item>>(&mut self, v: &V) {
+///         let mut i = 0;
+///         while i < v.len() { self.visit_item(&v[i]); i += 1; }
 ///     }
 /// }
 ///
@@ -205,7 +206,7 @@ pub use ast_macro::Ast;
 ///     // `#[seq]` adds `visit_expr_seq_mut`, which hands over the list, not one element.
 ///     struct DropLits;
 ///     impl visit::VisitMut for DropLits {
-///         fn visit_expr_seq_mut<'v, V: SeqView<'v, Expr>>(&mut self, v: &'v mut V) {
+///         fn visit_expr_seq_mut<V: SeqView<Expr>>(&mut self, v: &mut V) {
 ///             v.retain_mut(|e| !matches!(e, Expr::Lit(_)));
 ///         }
 ///     }
@@ -221,16 +222,16 @@ pub use ast_macro::Ast;
 /// `visit_<node>_seq` and `visit_<node>_opt`, plus their `_mut` halves. They are handed the whole
 /// slot rather than one element, and like the others they come with a body that just walks on.
 ///
-/// Reading, you get a `&impl SeqView<'_, T>` or `&impl OptView<T>`. That shows you what `visit_<node>`
+/// Reading, you get a `&impl SeqView<T>` or `&impl OptView<T>`. That shows you what `visit_<node>`
 /// cannot: how many elements there are, which index one has, what sits next to it. Editing, you
 /// get a `&mut`, so you can `push`, `remove` or `retain_mut` — see the example above.
 ///
-/// The seq methods carry the borrow as a lifetime, because [`SeqView`] does — that is what lets each
-/// container hand back its own iterator. So an override is written
-/// `fn visit_<node>_seq_mut<'v, V: SeqView<'v, Node>>(&mut self, v: &'v mut V)`, and if the node is
-/// generic (`Node<S>`) it also needs `where S: 'v`, which the bound's own well-formedness asks for.
-/// `push`/`insert`/`remove`/`retain_mut` borrow only for the call, so they stay usable; `seq_iter_mut`
-/// takes the whole `'v` and so comes last.
+/// Both views are positional and carry no borrow, so an override may `push`, walk, and `remove` in
+/// whatever order it likes. Elements are reached by indexing — `&v[i]`, `&mut v[i]`, through
+/// [`SeqView`]'s `Index`/`IndexMut` supertraits — so an override walks the slot as
+/// `for i in 0..v.len()`. It cannot use [`View`]: the view param is a bare `impl SeqView<T>` and an
+/// impl may not add bounds its trait does not declare. Code holding the container directly can use
+/// [`View::view_iter`].
 ///
 /// The marker only chooses which method is called. A `Vec<T>` and an `Option<T>` are walked by the
 /// same generated code either way, and no container type is ever named.
@@ -391,52 +392,73 @@ pub trait Repeater<const INDEX: usize> {
     type Type: ?Sized;
 }
 
-// ── Structural-edit views ───────────────────────────────────────────────────────────────────────
+// ── Slot views ──────────────────────────────────────────────────────────────────────────────────
 //
 // A generated `visit_mut` traversal hands a *node held inside another AST in a collection / Option slot*
 // a **view of that slot** as an argument, through which the visitor edits the parent **in place** (no
 // cloning of existing nodes). The view is a trait implemented directly on the container types — so the
-// descent passes `&mut self.field` with no wrapper. Two are edit targets: [`SeqView`] (Vec-like,
-// unbounded) and [`OptView`] (Option-like, ≤1). One is descent-only: [`MapView`], because a map holds
-// the node in its VALUE slot, which no positional view can address.
+// descent passes `&mut self.field` with no wrapper.
+//
+// Two of them are about **editing** a slot, and carry no borrow: [`SeqView`] (Vec-like, unbounded,
+// positional) and [`OptView`] (Option-like, ≤1). The third, [`View`], is about **iterating** whatever a
+// container holds, and carries its borrow as a trait parameter so each container can name its own
+// iterators. Keeping the two apart is what lets `visit_<t>_seq_mut` take a plain `&mut impl SeqView<T>`
+// — a view that stays usable across a `push`, a `remove` and a walk, in any order.
 //
 // These are **edit** views only: the descent itself goes through [`walk::Walk`]. The element type is a
-// **type parameter** (the `T` of `SeqView<'_, T>`, not an associated type), and the traits are
-// bare-element — a `#[seq]`/`#[opt]` field must be a bare `Vec<T>`/`Option<T>`, never a wrapped one.
+// **type parameter** (`SeqView<T>`, not an associated type), and the traits are bare-element — a
+// `#[seq]`/`#[opt]` field must be a bare `Vec<T>`/`Option<T>`, never a wrapped one.
 
-/// A mutable, **sequence-like** view of an AST collection field (`Vec`, `VecDeque`, or a container
-/// of your own — implement this trait for it and `#[seq]` accepts it, since no container name is
-/// ever matched). Bare-element — the element type is `T` itself, never a wrapped `Box<T>`. A generated
-/// `visit_<t>_seq_mut(&mut self, &mut impl SeqView<'_, T>)` receives one (and `visit_<t>_seq` a `&`); override it to edit the collection in
-/// place. The positional core (`len`/`get`/`get_mut`/`insert`/`remove`) plus the two iterators are
-/// required; the ergonomic helpers are `Self: Sized` provided methods.
+/// Iteration over whatever a container holds: the elements of a sequence, the ≤1 node of an `Option`,
+/// the **values** of a map. One trait for every shape, because iteration is the one thing they all
+/// agree on — a map has no positional edit, and a sequence has no key.
 ///
-/// The borrow is a parameter of the **trait** rather than of the methods, exactly as on [`MapView`],
-/// so each container names its own iterators as associated types: a `Vec` hands back the slice
-/// iterators. That is what keeps `seq_iter_mut` safe — an iterator built here out of repeated
-/// `get_mut` calls would have to widen each element borrow to the whole walk, which is sound only if
-/// every impl yields a distinct element per index, and a safe trait cannot promise that. A GAT would
-/// put the lifetime back on the method, and costs 1.65.
-pub trait SeqView<'a, T: 'a> {
+/// The borrow is a parameter of the **trait** rather than of the methods, so the two iterators can be
+/// named as associated types: a `Vec` hands back the slice iterators, a map its own `Values`/
+/// `ValuesMut`, an association list a `Map<slice::Iter<..>, fn(..) -> ..>`. No `dyn`, no allocation,
+/// and no `unsafe` — an iterator synthesized here out of repeated `get_mut` calls would have to widen
+/// each element borrow to the whole walk, which is sound only if every impl yields a distinct element
+/// per index, and a safe trait cannot promise that. A GAT would put the lifetime back on the method,
+/// and costs 1.65.
+///
+/// Implementing it is optional: a container is walked through [`walk::Walk`] and edited through
+/// [`SeqView`]/[`OptView`], neither of which needs an iterator. Implement `View` when you want to
+/// iterate the slot in a visitor you write by hand.
+pub trait View<'a, T: 'a> {
     /// The container's own by-reference iterator.
     type Iter: Iterator<Item = &'a T>;
     /// The container's own by-`&mut` iterator.
     type IterMut: Iterator<Item = &'a mut T>;
 
+    /// Iterate what the container holds, by shared ref. Named `view_iter` (not `iter`) so it never
+    /// shadows the slice `iter` on a concrete `Vec` when the trait is in scope.
+    fn view_iter(&'a self) -> Self::Iter;
+    /// Iterate what the container holds, by `&mut`, for in-place edits. Keys, for a map, are untouched.
+    fn view_iter_mut(&'a mut self) -> Self::IterMut;
+}
+
+/// A mutable, **sequence-like** view of an AST collection field (`Vec`, `VecDeque`, or a container
+/// of your own — implement this trait for it and `#[seq]` accepts it, since no container name is
+/// ever matched). Bare-element — the element type is `T` itself, never a wrapped `Box<T>`. A generated
+/// `visit_<t>_seq_mut(&mut self, &mut impl SeqView<T>)` receives one (and `visit_<t>_seq` a `&`);
+/// override it to edit the collection in place.
+///
+/// Purely positional, and so free of any borrow: an override may `push`, then walk, then `remove`,
+/// in whatever order it likes. Element access is [`Index`]/[`IndexMut`] — `&v[i]`, `&mut v[i]`,
+/// panicking past the end like every other indexed container — so the trait itself declares only what
+/// indexing cannot say: how long the slot is, and how to grow or shrink it. Iteration lives on
+/// [`View`], which a container implements separately; inside a visitor override, where the view
+/// arrives as a bare `impl SeqView<T>`, walk it as `for i in 0..v.len()`.
+///
+/// [`Index`]: core::ops::Index
+/// [`IndexMut`]: core::ops::IndexMut
+pub trait SeqView<T>:
+    core::ops::Index<usize, Output = T> + core::ops::IndexMut<usize, Output = T>
+{
     fn len(&self) -> usize;
-    fn get(&self, i: usize) -> Option<&T>;
-    /// Edit an element in place — no clone.
-    fn get_mut(&mut self, i: usize) -> Option<&mut T>;
     /// Insert before index `i` (`i == len` appends).
     fn insert(&mut self, i: usize, value: T);
     fn remove(&mut self, i: usize) -> T;
-    /// Iterate the elements by shared ref (`for x in v.seq_iter() { … }`). Named `seq_iter` (not
-    /// `iter`) so it never shadows the slice `iter` on a concrete `Vec` when `SeqView` is in scope.
-    fn seq_iter(&'a self) -> Self::Iter;
-    /// Iterate the elements by `&mut` for in-place edits (`for x in v.seq_iter_mut() { … }`). For
-    /// structural changes use `push`/`insert`/`remove`/`retain_mut`, which borrow the view only for
-    /// the call and so stay usable either side of a walk.
-    fn seq_iter_mut(&'a mut self) -> Self::IterMut;
 
     fn is_empty(&self) -> bool {
         self.len() == 0
@@ -448,19 +470,14 @@ pub trait SeqView<'a, T: 'a> {
         let n = self.len();
         self.insert(n, value);
     }
-    /// Visit each element in place, then drop those for which `f` returns `false`. Indexed rather
-    /// than iterator-driven, so it is the one way to edit *and* read in a single borrow.
+    /// Visit each element in place, then drop those for which `f` returns `false`.
     fn retain_mut(&mut self, mut f: impl FnMut(&mut T) -> bool)
     where
         Self: Sized,
     {
         let mut i = 0;
         while i < self.len() {
-            let keep = match self.get_mut(i) {
-                Some(e) => f(e),
-                None => true,
-            };
-            if keep {
+            if f(&mut self[i]) {
                 i += 1;
             } else {
                 self.remove(i);
@@ -469,52 +486,10 @@ pub trait SeqView<'a, T: 'a> {
     }
 }
 
-/// A **map-like** view of an AST map field (`HashMap`/`BTreeMap`): the node sits in the VALUE slot, so
-/// the viewed element is the map's value type rather than its first type argument. Descent-only — a map
-/// slot is keyed, so there is no positional structural edit and hence no `#[seq]`/`#[opt]` counterpart.
-///
-/// **No longer part of the walk.** A map field descends through [`walk::Walk`], whose `Thru<H>` impl for
-/// `HashMap`/`BTreeMap` iterates the values directly. This trait is kept as a way to write that
-/// traversal by hand; nothing `visitor!` generates refers to it.
-/// The borrow is a parameter of the trait rather than of the methods, as on [`SeqView`], so the two
-/// iterators can be named as associated types: a map yields its own `Values`/`ValuesMut`, with no
-/// `dyn` and no allocation. A GAT would put the lifetime back on the method, and costs 1.65.
-pub trait MapView<'a, T: 'a> {
-    /// The map's own by-reference value iterator.
-    type Iter: Iterator<Item = &'a T>;
-    /// The map's own by-`&mut` value iterator.
-    type IterMut: Iterator<Item = &'a mut T>;
-
-    fn map_iter(&'a self) -> Self::Iter;
-    /// Iterate the values by `&mut` for in-place edits (keys are untouched).
-    fn map_iter_mut(&'a mut self) -> Self::IterMut;
-}
-
-impl<'a, K: 'a, V: 'a, S> MapView<'a, V> for std::collections::HashMap<K, V, S> {
-    type Iter = std::collections::hash_map::Values<'a, K, V>;
-    type IterMut = std::collections::hash_map::ValuesMut<'a, K, V>;
-    fn map_iter(&'a self) -> Self::Iter {
-        self.values()
-    }
-    fn map_iter_mut(&'a mut self) -> Self::IterMut {
-        self.values_mut()
-    }
-}
-
-impl<'a, K: 'a, V: 'a> MapView<'a, V> for std::collections::BTreeMap<K, V> {
-    type Iter = std::collections::btree_map::Values<'a, K, V>;
-    type IterMut = std::collections::btree_map::ValuesMut<'a, K, V>;
-    fn map_iter(&'a self) -> Self::Iter {
-        self.values()
-    }
-    fn map_iter_mut(&'a mut self) -> Self::IterMut {
-        self.values_mut()
-    }
-}
-
 /// A mutable, **Option-like** view (≤1 element) of an AST `Option` field, bare-element (a nested
 /// `Box`-like layer descends separately, through [`walk::Walk`]). A generated
 /// `visit_<t>_opt_mut(&mut self, &mut impl OptView<T>)` receives one, and `visit_<t>_opt` a `&`.
+/// Like [`SeqView`] it carries no borrow; iterating the slot is [`View`]'s job.
 pub trait OptView<T> {
     fn is_some(&self) -> bool;
     fn get(&self) -> Option<&T>;
@@ -530,15 +505,6 @@ pub trait OptView<T> {
     fn clear(&mut self) {
         let _ = self.take();
     }
-    /// Iterate the node by shared ref — 0 or 1 items. Named `opt_iter` (not `iter`) to mirror
-    /// [`SeqView::seq_iter`] and stay non-shadowing.
-    fn opt_iter(&self) -> core::option::IntoIter<&T> {
-        self.get().into_iter()
-    }
-    /// Iterate the node by `&mut` — 0 or 1 items (in-place edit). Mirrors [`SeqView::seq_iter_mut`].
-    fn opt_iter_mut(&mut self) -> core::option::IntoIter<&mut T> {
-        self.get_mut().into_iter()
-    }
 }
 
 // `SeqView`/`OptView` are **bare-element**: the container holds the viewed node `T` directly (no element
@@ -546,17 +512,9 @@ pub trait OptView<T> {
 // [`walk::Walk`] instead. Such a slot can be neither emptied nor filled, so it is descent-only — never a
 // `#[seq]`/`#[opt]` edit target.
 
-impl<'a, T: 'a> SeqView<'a, T> for Vec<T> {
-    type Iter = core::slice::Iter<'a, T>;
-    type IterMut = core::slice::IterMut<'a, T>;
+impl<T> SeqView<T> for Vec<T> {
     fn len(&self) -> usize {
         <[T]>::len(self)
-    }
-    fn get(&self, i: usize) -> Option<&T> {
-        <[T]>::get(self, i)
-    }
-    fn get_mut(&mut self, i: usize) -> Option<&mut T> {
-        <[T]>::get_mut(self, i)
     }
     fn insert(&mut self, i: usize, value: T) {
         Vec::insert(self, i, value);
@@ -564,25 +522,22 @@ impl<'a, T: 'a> SeqView<'a, T> for Vec<T> {
     fn remove(&mut self, i: usize) -> T {
         Vec::remove(self, i)
     }
-    fn seq_iter(&'a self) -> Self::Iter {
+}
+
+impl<'a, T: 'a> View<'a, T> for Vec<T> {
+    type Iter = core::slice::Iter<'a, T>;
+    type IterMut = core::slice::IterMut<'a, T>;
+    fn view_iter(&'a self) -> Self::Iter {
         <[T]>::iter(self)
     }
-    fn seq_iter_mut(&'a mut self) -> Self::IterMut {
+    fn view_iter_mut(&'a mut self) -> Self::IterMut {
         <[T]>::iter_mut(self)
     }
 }
 
-impl<'a, T: 'a> SeqView<'a, T> for std::collections::VecDeque<T> {
-    type Iter = std::collections::vec_deque::Iter<'a, T>;
-    type IterMut = std::collections::vec_deque::IterMut<'a, T>;
+impl<T> SeqView<T> for std::collections::VecDeque<T> {
     fn len(&self) -> usize {
         std::collections::VecDeque::len(self)
-    }
-    fn get(&self, i: usize) -> Option<&T> {
-        std::collections::VecDeque::get(self, i)
-    }
-    fn get_mut(&mut self, i: usize) -> Option<&mut T> {
-        std::collections::VecDeque::get_mut(self, i)
     }
     fn insert(&mut self, i: usize, value: T) {
         std::collections::VecDeque::insert(self, i, value);
@@ -590,10 +545,15 @@ impl<'a, T: 'a> SeqView<'a, T> for std::collections::VecDeque<T> {
     fn remove(&mut self, i: usize) -> T {
         std::collections::VecDeque::remove(self, i).expect("index in bounds")
     }
-    fn seq_iter(&'a self) -> Self::Iter {
+}
+
+impl<'a, T: 'a> View<'a, T> for std::collections::VecDeque<T> {
+    type Iter = std::collections::vec_deque::Iter<'a, T>;
+    type IterMut = std::collections::vec_deque::IterMut<'a, T>;
+    fn view_iter(&'a self) -> Self::Iter {
         std::collections::VecDeque::iter(self)
     }
-    fn seq_iter_mut(&'a mut self) -> Self::IterMut {
+    fn view_iter_mut(&'a mut self) -> Self::IterMut {
         std::collections::VecDeque::iter_mut(self)
     }
 }
@@ -613,6 +573,83 @@ impl<T> OptView<T> for Option<T> {
     }
     fn take(&mut self) -> Option<T> {
         Option::take(self)
+    }
+}
+
+impl<'a, T: 'a> View<'a, T> for Option<T> {
+    type Iter = core::option::Iter<'a, T>;
+    type IterMut = core::option::IterMut<'a, T>;
+    fn view_iter(&'a self) -> Self::Iter {
+        self.iter()
+    }
+    fn view_iter_mut(&'a mut self) -> Self::IterMut {
+        self.iter_mut()
+    }
+}
+
+impl<'a, T: 'a> View<'a, T> for std::collections::LinkedList<T> {
+    type Iter = std::collections::linked_list::Iter<'a, T>;
+    type IterMut = std::collections::linked_list::IterMut<'a, T>;
+    fn view_iter(&'a self) -> Self::Iter {
+        std::collections::LinkedList::iter(self)
+    }
+    fn view_iter_mut(&'a mut self) -> Self::IterMut {
+        std::collections::LinkedList::iter_mut(self)
+    }
+}
+
+// The two unsized/fixed shapes the walk already handles: a slice and an array. Neither can grow, so
+// neither is a `SeqView` — but both iterate, which is all `View` asks.
+impl<'a, T: 'a> View<'a, T> for [T] {
+    type Iter = core::slice::Iter<'a, T>;
+    type IterMut = core::slice::IterMut<'a, T>;
+    fn view_iter(&'a self) -> Self::Iter {
+        self.iter()
+    }
+    fn view_iter_mut(&'a mut self) -> Self::IterMut {
+        self.iter_mut()
+    }
+}
+
+impl<'a, T: 'a, const N: usize> View<'a, T> for [T; N] {
+    type Iter = core::slice::Iter<'a, T>;
+    type IterMut = core::slice::IterMut<'a, T>;
+    fn view_iter(&'a self) -> Self::Iter {
+        self.iter()
+    }
+    fn view_iter_mut(&'a mut self) -> Self::IterMut {
+        self.iter_mut()
+    }
+}
+
+// Not implemented, on purpose: `HashSet`, `BTreeSet` and `BinaryHeap` have no `iter_mut`, because
+// handing out a `&mut` to an element would let a visitor break the hash, the ordering or the heap
+// invariant that places it. A set-shaped slot is therefore walked (through [`walk::Walk`]) but never
+// edited through a view; rebuild the set instead.
+
+// A map holds its node in the VALUE slot, which no positional view can address — so a map is a `View`
+// and nothing else. The descent reaches it through [`walk::Walk`], whose `Thru<H>` impl for
+// `HashMap`/`BTreeMap` walks the values directly; `View` is how a hand-written traversal does the same.
+
+impl<'a, K: 'a, V: 'a, S> View<'a, V> for std::collections::HashMap<K, V, S> {
+    type Iter = std::collections::hash_map::Values<'a, K, V>;
+    type IterMut = std::collections::hash_map::ValuesMut<'a, K, V>;
+    fn view_iter(&'a self) -> Self::Iter {
+        self.values()
+    }
+    fn view_iter_mut(&'a mut self) -> Self::IterMut {
+        self.values_mut()
+    }
+}
+
+impl<'a, K: 'a, V: 'a> View<'a, V> for std::collections::BTreeMap<K, V> {
+    type Iter = std::collections::btree_map::Values<'a, K, V>;
+    type IterMut = std::collections::btree_map::ValuesMut<'a, K, V>;
+    fn view_iter(&'a self) -> Self::Iter {
+        self.values()
+    }
+    fn view_iter_mut(&'a mut self) -> Self::IterMut {
+        self.values_mut()
     }
 }
 

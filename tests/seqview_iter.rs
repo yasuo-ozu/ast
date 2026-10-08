@@ -1,55 +1,109 @@
-//! `SeqView`/`OptView` are **bare-element**: `Vec<T>: SeqView<'_, T>`, `Option<T>: OptView<T>`. A transparent
-//! single-slot wrapper (`Box<T>`/`Attempt<T>`) is a `Walk` (always one node), so a `Vec<Box<T>>`
-//! is `SeqView<'_, Box<T>>` (element `Box<T>`) — the visitor descends the box as a further `Walk`
-//! level.
-//! In-place iteration via `seq_iter[_mut]`; structural changes via `retain_mut`/`push`/`insert`/`remove`.
+//! The three slot views, and which std types get which.
+//!
+//! [`SeqView`]/[`OptView`] are the **edit** halves and carry no borrow: positional, so a view stays
+//! usable across a `push`, a `remove` and a walk in any order. [`View`] is the **iteration** half and
+//! carries its borrow as a trait argument, so every container names its own iterators.
+//!
+//! All three are bare-element: `Vec<T>: SeqView<T>`, `Option<T>: OptView<T>`. A transparent
+//! single-slot wrapper (`Box<T>`) is a `Walk` (always one node), so a `Vec<Box<T>>` is
+//! `SeqView<Box<T>>` — the visitor descends the box as a further `Walk` level.
 
-use ast::{OptView, SeqView};
+use ast::{OptView, SeqView, View};
+use std::collections::{BTreeMap, HashMap, LinkedList, VecDeque};
 
-#[test]
-fn iter_reads_every_element() {
-    let v = vec![1, 2, 3];
-    assert_eq!(
-        <Vec<i32> as SeqView<'_, i32>>::seq_iter(&v)
-            .copied()
-            .collect::<Vec<_>>(),
-        vec![1, 2, 3]
-    );
-    assert_eq!(<Vec<i32> as SeqView<'_, i32>>::seq_iter(&v).len(), 3);
-}
+// ---- `View`: every std shape that can hand out `&mut` to what it holds ----
 
 #[test]
-fn iter_mut_edits_every_element_in_place() {
+fn view_covers_the_growable_sequences() {
     let mut v = vec![1, 2, 3];
-    for x in <Vec<i32> as SeqView<'_, i32>>::seq_iter_mut(&mut v) {
+    assert_eq!(v.view_iter().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
+    for x in v.view_iter_mut() {
         *x *= 10;
     }
     assert_eq!(v, vec![10, 20, 30]);
-    assert_eq!(
-        <Vec<i32> as SeqView<'_, i32>>::seq_iter_mut(&mut v).count(),
-        3,
-        "each element once"
-    );
+
+    let mut d: VecDeque<i32> = vec![1, 2].into();
+    assert_eq!(d.view_iter().copied().collect::<Vec<_>>(), vec![1, 2]);
+    for x in d.view_iter_mut() {
+        *x += 1;
+    }
+    assert_eq!(d.view_iter().copied().collect::<Vec<_>>(), vec![2, 3]);
+
+    let mut l: LinkedList<i32> = [1, 2].into_iter().collect();
+    assert_eq!(l.view_iter().copied().collect::<Vec<_>>(), vec![1, 2]);
+    for x in l.view_iter_mut() {
+        *x += 1;
+    }
+    assert_eq!(l.view_iter().copied().collect::<Vec<_>>(), vec![2, 3]);
 }
 
 #[test]
-fn optview_iter_and_iter_mut() {
+fn view_covers_the_fixed_shapes() {
+    // Neither can grow, so neither is a `SeqView` — but both iterate.
+    let mut a = [1, 2, 3];
+    assert_eq!(a.view_iter().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
+    for x in a.view_iter_mut() {
+        *x *= 2;
+    }
+    assert_eq!(a, [2, 4, 6]);
+
+    let s: &mut [i32] = &mut a;
+    for x in s.view_iter_mut() {
+        *x += 1;
+    }
+    assert_eq!(a, [3, 5, 7]);
+}
+
+#[test]
+fn view_covers_option_as_a_zero_or_one_slot() {
     let some: Option<i32> = Some(5);
     let none: Option<i32> = None;
-    assert_eq!(<Option<i32> as OptView<i32>>::opt_iter(&some).count(), 1);
-    assert_eq!(<Option<i32> as OptView<i32>>::opt_iter(&none).count(), 0);
+    assert_eq!(some.view_iter().count(), 1);
+    assert_eq!(none.view_iter().count(), 0);
 
     let mut o: Option<i32> = Some(1);
-    for x in <Option<i32> as OptView<i32>>::opt_iter_mut(&mut o) {
+    for x in o.view_iter_mut() {
         *x += 100;
     }
     assert_eq!(o, Some(101));
 }
 
 #[test]
+fn view_covers_the_maps_by_value() {
+    // The node sits in the VALUE slot, so that is what a map iterates. Keys are untouched.
+    let mut b: BTreeMap<&str, i32> = [("a", 1), ("b", 2)].into_iter().collect();
+    assert_eq!(b.view_iter().copied().collect::<Vec<_>>(), vec![1, 2]);
+    for v in b.view_iter_mut() {
+        *v *= 10;
+    }
+    assert_eq!(b["a"], 10);
+
+    let mut h: HashMap<&str, i32> = [("a", 1)].into_iter().collect();
+    for v in h.view_iter_mut() {
+        *v += 1;
+    }
+    assert_eq!(h["a"], 2);
+}
+
+// A caller generic over the trait: the iterator comes back as an associated type, so this needs no
+// `Box` and no `dyn`.
+fn total<'a, V: View<'a, i32>>(c: &'a V) -> i32 {
+    c.view_iter().copied().sum()
+}
+
+#[test]
+fn a_generic_caller_names_the_iterator_as_an_associated_type() {
+    assert_eq!(total(&vec![1, 2, 3]), 6);
+    assert_eq!(total(&Some(4)), 4);
+    assert_eq!(total(&BTreeMap::from([("a", 5)])), 5);
+}
+
+// ---- `SeqView`: positional edits, no borrow ----
+
+#[test]
 fn retain_mut_visits_then_drops() {
     let mut v = vec![1, 2, 3, 4];
-    <Vec<i32> as SeqView<'_, i32>>::retain_mut(&mut v, |x| {
+    <Vec<i32> as SeqView<i32>>::retain_mut(&mut v, |x| {
         *x += 1;
         *x % 2 == 0
     });
@@ -59,28 +113,67 @@ fn retain_mut_visits_then_drops() {
 #[test]
 fn structural_index_ops() {
     let mut v = vec![1, 3];
-    <Vec<i32> as SeqView<'_, i32>>::insert(&mut v, 1, 2);
+    <Vec<i32> as SeqView<i32>>::insert(&mut v, 1, 2);
     assert_eq!(v, vec![1, 2, 3]);
-    assert_eq!(<Vec<i32> as SeqView<'_, i32>>::remove(&mut v, 0), 1);
-    <Vec<i32> as SeqView<'_, i32>>::push(&mut v, 9);
+    assert_eq!(<Vec<i32> as SeqView<i32>>::remove(&mut v, 0), 1);
+    <Vec<i32> as SeqView<i32>>::push(&mut v, 9);
     assert_eq!(v, vec![2, 3, 9]);
+}
+
+// The point of keeping the borrow off `SeqView`: a generic caller can read the slot, edit it, and
+// read it again, in one function, without the borrow checker objecting.
+fn edit_in_any_order<V: SeqView<i32>>(v: &mut V) {
+    v.push(4);
+    for i in 0..v.len() {
+        v[i] *= 2;
+    }
+    v.retain_mut(|x| *x != 4);
+    v.insert(0, 0);
+}
+
+#[test]
+fn a_generic_caller_edits_and_reads_in_one_borrow() {
+    let mut v = vec![1, 2, 3];
+    edit_in_any_order(&mut v);
+    assert_eq!(v, vec![0, 2, 6, 8], "2 was doubled to 4 and dropped");
+
+    let mut d: VecDeque<i32> = vec![1, 2, 3].into();
+    edit_in_any_order(&mut d);
+    assert_eq!(d.view_iter().copied().collect::<Vec<_>>(), vec![0, 2, 6, 8]);
 }
 
 #[test]
 fn vec_of_box_is_bare_element() {
     // Bare-element: `Vec<Box<T>>: SeqView<Box<T>>` yields `&mut Box<T>` (the element is the box). The
-    // visitor descends the box as a further `OptView<T>` level; here we edit through the box directly.
+    // visitor descends the box as a further `Walk` level; here we edit through the box directly.
     let mut v: Vec<Box<i32>> = vec![Box::new(1), Box::new(2)];
-    for x in <Vec<Box<i32>> as SeqView<'_, Box<i32>>>::seq_iter_mut(&mut v) {
+    for x in v.view_iter_mut() {
         **x += 100;
     }
     assert_eq!(v.iter().map(|b| **b).collect::<Vec<_>>(), vec![101, 102]);
 }
 
+// ---- `OptView` ----
+
+#[test]
+fn optview_fills_and_empties_a_slot() {
+    let mut o: Option<i32> = None;
+    assert!(o.is_none());
+    o.set(1);
+    assert_eq!(o.get(), Some(&1));
+    if let Some(x) = o.get_mut() {
+        *x += 1;
+    }
+    assert_eq!(o.take(), Some(2));
+    o.set(9);
+    o.clear();
+    assert!(!o.is_some());
+}
+
 // `push`/`retain_mut` are inherent *on `Vec`*, so they win resolution over the same-named `SeqView`
-// methods when `SeqView` is imported. The iterators are `seq_iter`/`seq_iter_mut` precisely so they
-// never shadow the slice `iter`/`iter_mut` reached via `Deref` — a bare `vec.iter()` with `SeqView` in
-// scope still hits the std slice method.
+// methods when `SeqView` is imported. The iterators are `view_iter`/`view_iter_mut` precisely so they
+// never shadow the slice `iter`/`iter_mut` reached via `Deref` — a bare `vec.iter()` with the traits
+// in scope still hits the std slice method.
 #[test]
 fn push_and_retain_mut_prefer_inherent_over_seqview() {
     let mut v: Vec<i32> = vec![1, 2, 3];
@@ -94,10 +187,10 @@ fn push_and_retain_mut_prefer_inherent_over_seqview() {
     assert_eq!(
         v.iter().copied().sum::<i32>(),
         6,
-        "slice `.iter()` unshadowed by SeqView"
+        "slice `.iter()` unshadowed by the views"
     );
-    assert_eq!(<Vec<i32> as SeqView<'_, i32>>::len(&v), 2); // trait still reachable via UFCS
-                                                            // Still object-safe, now that the two iterators have to be named along with the borrow.
-    let _view: &dyn SeqView<i32, Iter = std::slice::Iter<i32>, IterMut = std::slice::IterMut<i32>> =
-        &v;
+    assert_eq!(<Vec<i32> as SeqView<i32>>::len(&v), 2); // trait still reachable via UFCS
+                                                        // Both edit views are object-safe: nothing in them mentions a borrow or an associated type.
+    let _seq: &dyn SeqView<i32> = &v;
+    let _opt: &dyn OptView<i32> = &Some(1);
 }

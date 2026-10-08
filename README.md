@@ -104,7 +104,7 @@ pub mod visit {
 struct DropLits;
 impl visit::Visit for DropLits {}
 impl visit::VisitMut for DropLits {
-    fn visit_expr_seq_mut<'v, V: SeqView<'v, Expr>>(&mut self, v: &'v mut V) {
+    fn visit_expr_seq_mut<V: SeqView<Expr>>(&mut self, v: &mut V) {
         v.retain_mut(|e| !matches!(e, Expr::Lit(_)));
     }
 }

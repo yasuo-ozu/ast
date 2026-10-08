@@ -41,10 +41,10 @@ struct Observe {
     opt_present: bool,
 }
 impl visit::Visit for Observe {
-    fn visit_leaf_seq<'v, V: SeqView<'v, Leaf>>(&mut self, v: &'v V) {
+    fn visit_leaf_seq<V: SeqView<Leaf>>(&mut self, v: &V) {
         self.len = v.len();
         for i in 0..v.len() {
-            if matches!(v.get(i), Some(Leaf::N(n)) if n % 2 == 1) {
+            if matches!(&v[i], Leaf::N(n) if n % 2 == 1) {
                 self.indices.push(i);
             }
         }
@@ -83,7 +83,7 @@ fn the_opt_view_reports_presence() {
 struct Edit;
 impl visit::Visit for Edit {}
 impl visit::VisitMut for Edit {
-    fn visit_leaf_seq_mut<'v, V: SeqView<'v, Leaf>>(&mut self, v: &'v mut V) {
+    fn visit_leaf_seq_mut<V: SeqView<Leaf>>(&mut self, v: &mut V) {
         v.retain_mut(|e| !matches!(e, Leaf::N(2)));
         v.insert(0, Leaf::N(0));
     }

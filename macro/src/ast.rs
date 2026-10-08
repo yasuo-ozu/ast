@@ -1,6 +1,6 @@
 use crate::util::{angle, data_field_iter, for_each_type_path, gargs, gparams, to_snake};
 use proc_macro2::{Literal, Span, TokenStream};
-use proc_macro_error::{abort, emit_error, emit_warning};
+use proc_macro_error3::{abort, emit_error, emit_warning};
 use std::collections::{HashMap, HashSet};
 use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;

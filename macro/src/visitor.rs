@@ -4,7 +4,7 @@ use crate::util::{
     Head, LayerKind, Side,
 };
 use proc_macro2::{Span, TokenStream};
-use proc_macro_error::abort;
+use proc_macro_error3::abort;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use syn::parse::{Parse, ParseStream, Parser};

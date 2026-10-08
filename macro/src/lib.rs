@@ -5,7 +5,7 @@
 //! crate path through `$crate` so the code they emit resolves wherever it lands.
 
 use proc_macro::TokenStream as TokenStream1;
-use proc_macro_error::{abort, proc_macro_error};
+use proc_macro_error3::{abort, proc_macro_error};
 use syn::*;
 
 mod ast;

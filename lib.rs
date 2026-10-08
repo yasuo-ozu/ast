@@ -1,3 +1,8 @@
+// Every doctest here spells its nodes out at the crate root and then names them in
+// `visitor!(crate::Expr)`, so the `fn main` is doing real work: without it rustdoc wraps the whole
+// snippet, the nodes become items *inside* `main`, and `crate::Expr` no longer resolves
+// (`error[E0433]: could not find Expr in the crate root`). The lint does not model that.
+#![allow(clippy::needless_doctest_main)]
 #![doc = include_str!("README.md")]
 //!
 //! # What lives here
@@ -252,6 +257,19 @@ pub use ast_macro::Ast;
 /// it; an override that wants to walk the elements *and* resize indexes instead (`&mut v[i]`, then
 /// `push`/`retain_mut`), which is what the positional half is for.
 ///
+/// When the visited node is itself generic, an override has to **repeat** the `where` clause — rustc
+/// checks the impl method's signature for well-formedness on its own and does not carry the trait's
+/// predicate over:
+///
+/// ```ignore
+/// fn visit_stmt_seq_mut<'a, V: SeqEdit<Stmt<S>> + Elements<'a, Stmt<S>>>(&mut self, v: &'a mut V)
+///     where Stmt<S>: 'a                       // omit this and: error[E0309]: the parameter type
+/// { .. }                                      // `S` may not live long enough
+/// ```
+///
+/// A node with no parameters (`Stmt`, not `Stmt<S>`) is `'static`, the predicate is trivially true,
+/// and the clause may be left off.
+///
 /// Resizing is [`SeqEdit`] and filling or emptying is [`OptEdit`], neither of which the shared side
 /// asks for — so a fixed-size slot still has a readable view.
 ///
@@ -431,6 +449,12 @@ pub trait Repeater<const INDEX: usize> {
 // These are **edit** views only: the descent itself goes through [`walk::Walk`]. The element type is a
 // **type parameter** (`SeqView<T>`, not an associated type), and the traits are bare-element — a
 // `#[seq]`/`#[opt]` field must be a bare `Vec<T>`/`Option<T>`, never a wrapped one.
+//
+// The type parameter is also what keeps these implementable downstream. A consumer whose nodes are
+// local may put any of these on a container it does not own —
+// `impl<'a> Elements<'a, MyNode> for BTreeSet<MyNode>` is accepted, because the local `MyNode`
+// appears in the trait reference. With the element as an *associated* type the trait reference would
+// be `Elements for BTreeSet<MyNode>`, naming nothing local, and the orphan rule would refuse it.
 
 /// Iteration over whatever a container holds: the elements of a sequence, the ≤1 node of an `Option`,
 /// the **values** of a map. One trait for every shape, because iteration is the one thing they all
@@ -495,14 +519,20 @@ pub trait SeqEdit<T>: SeqView<T> + core::ops::IndexMut<usize, Output = T> {
     fn insert(&mut self, i: usize, value: T);
     fn remove(&mut self, i: usize) -> T;
 
-    fn push(&mut self, value: T)
-    where
-        Self: Sized,
-    {
+    /// Append. No `Self: Sized`, so it works through `&mut dyn SeqEdit<T>` as well.
+    fn push(&mut self, value: T) {
         let n = self.len();
         self.insert(n, value);
     }
     /// Visit each element in place, then drop those for which `f` returns `false`.
+    ///
+    /// The provided body is **O(n²)**: it can only shrink the slot through `remove`, which every
+    /// array-backed container implements by shifting the tail. A container that can do better should
+    /// say so — `Vec` and `VecDeque` here forward to their inherent `retain_mut`. The cost is real
+    /// and not hypothetical: a generated `visit_<t>_seq_mut` override holds its slot as a generic
+    /// `V`, so `v.retain_mut(..)` there is always this method, never an inherent one.
+    ///
+    /// `Self: Sized` because of the `impl FnMut` argument; the rest of the trait is object-safe.
     fn retain_mut(&mut self, mut f: impl FnMut(&mut T) -> bool)
     where
         Self: Sized,
@@ -559,6 +589,15 @@ impl<T> SeqView<T> for Vec<T> {
 }
 
 impl<T> SeqEdit<T> for Vec<T> {
+    // The provided `push`/`retain_mut` would go through `insert`/`remove` one element at a time;
+    // `Vec`'s own are amortized O(1) and O(n). Generic code — which is what a visitor override is —
+    // reaches these, never the inherent methods.
+    fn push(&mut self, value: T) {
+        Vec::push(self, value);
+    }
+    fn retain_mut(&mut self, f: impl FnMut(&mut T) -> bool) {
+        Vec::retain_mut(self, f);
+    }
     fn insert(&mut self, i: usize, value: T) {
         Vec::insert(self, i, value);
     }
@@ -585,6 +624,12 @@ impl<T> SeqView<T> for std::collections::VecDeque<T> {
 }
 
 impl<T> SeqEdit<T> for std::collections::VecDeque<T> {
+    fn push(&mut self, value: T) {
+        std::collections::VecDeque::push_back(self, value);
+    }
+    fn retain_mut(&mut self, f: impl FnMut(&mut T) -> bool) {
+        std::collections::VecDeque::retain_mut(self, f);
+    }
     fn insert(&mut self, i: usize, value: T) {
         std::collections::VecDeque::insert(self, i, value);
     }

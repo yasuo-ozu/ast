@@ -215,13 +215,15 @@ fn optview_fills_and_empties_a_slot() {
     assert_eq!(o.take(), Some(2));
     o.set(9);
     o.clear();
-    assert!(!o.is_some());
+    // named through the trait: `Option` has an inherent `is_none` that would otherwise win
+    // resolution, leaving `OptView`'s defaulted one untested.
+    assert!(OptView::is_none(&o));
 }
 
-// `push`/`retain_mut` are inherent *on `Vec`*, so they win resolution over the same-named `SeqView`
-// methods when `SeqView` is imported. The iterators are `view_iter`/`view_iter_mut` precisely so they
-// never shadow the slice `iter`/`iter_mut` reached via `Deref` — a bare `vec.iter()` with the traits
-// in scope still hits the std slice method.
+// `push`/`retain_mut` are inherent *on `Vec`*, so they win resolution over the same-named `SeqEdit`
+// methods when `SeqEdit` is imported. `Elements`'s iterators are `elements`/`elements_mut` precisely
+// so they never shadow the slice `iter`/`iter_mut` reached via `Deref` — a bare `vec.iter()` with the
+// traits in scope still hits the std slice method.
 #[test]
 fn push_and_retain_mut_prefer_inherent_over_seqview() {
     let mut v: Vec<i32> = vec![1, 2, 3];
@@ -238,9 +240,59 @@ fn push_and_retain_mut_prefer_inherent_over_seqview() {
         "slice `.iter()` unshadowed by the views"
     );
     assert_eq!(<Vec<i32> as SeqView<i32>>::len(&v), 2); // trait still reachable via UFCS
-                                                        // Both edit views are object-safe: nothing in them mentions a borrow or an associated type.
+
+    // Both edit views are object-safe: nothing in them mentions a borrow or an associated type.
     let _seq: &dyn SeqView<i32> = &v;
     let _edit: &dyn SeqEdit<i32> = &v;
     let _opt: &dyn OptView<i32> = &Some(1);
     let _oedit: &dyn OptEdit<i32> = &Some(1);
+}
+
+// `retain_mut` is the one `SeqEdit` method that cannot ride a vtable — it takes an `impl FnMut`.
+// Everything else does, `push` included: its provided body is `insert` at `len`, which needs no
+// `Self: Sized`. Pinned because the obvious reading of "`push` has a default body" is that it must
+// be `Sized`, and adding that back silently costs every `dyn` caller.
+#[test]
+fn the_whole_edit_view_rides_a_trait_object_except_retain_mut() {
+    let mut v: Vec<i32> = vec![1, 2, 3];
+    let d: &mut dyn SeqEdit<i32> = &mut v;
+    d.push(4);
+    d.insert(0, 0);
+    assert_eq!(d.remove(1), 1);
+    assert_eq!(d.len(), 4);
+    assert_eq!(d[0], 0);
+    d[0] = 9;
+    assert_eq!(v, vec![9, 2, 3, 4]);
+
+    let o: &mut dyn OptEdit<i32> = &mut None;
+    o.set(1);
+    assert_eq!(o.get(), Some(&1));
+    assert_eq!(o.take(), Some(1));
+    assert!(o.is_none());
+}
+
+// The provided `retain_mut` is quadratic (it can only shrink through `remove`), and a generated
+// `visit_<t>_seq_mut` override always reaches the *trait* method, never an inherent one — so the
+// array-backed containers forward to their own. This pins the behaviour; the cost is in the doc.
+#[test]
+fn retain_mut_and_push_go_through_the_containers_own() {
+    fn edit<V: SeqEdit<i32>>(v: &mut V) {
+        v.retain_mut(|x| {
+            *x *= 10;
+            *x != 20
+        });
+        v.push(7);
+    }
+
+    let mut v = vec![1, 2, 3];
+    edit(&mut v);
+    assert_eq!(
+        v,
+        vec![10, 30, 7],
+        "every element seen, the 2 dropped, 7 appended"
+    );
+
+    let mut d: VecDeque<i32> = vec![1, 2, 3].into();
+    edit(&mut d);
+    assert_eq!(d, VecDeque::from(vec![10, 30, 7]));
 }

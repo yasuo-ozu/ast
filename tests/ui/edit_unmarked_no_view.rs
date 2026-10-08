@@ -24,7 +24,11 @@ pub mod vis {
 
 struct V;
 impl<S> vis::VisitMut<S> for V {
-    fn visit_leaf_seq_mut<W: SeqView<Leaf<S>>>(&mut self, _v: &mut W) {}
+    fn visit_leaf_seq_mut<'v, W: SeqView<'v, Leaf<S>>>(&mut self, _v: &'v mut W)
+    where
+        S: 'v,
+    {
+    }
     fn visit_leaf_opt_mut<W: OptView<Leaf<S>>>(&mut self, _v: &mut W) {}
 }
 

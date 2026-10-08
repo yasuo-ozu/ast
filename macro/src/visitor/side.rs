@@ -77,9 +77,21 @@ pub(crate) fn gen_side(
         /// The per-method generic naming the view type: `p_vw` for seq, `p_ow` for opt (the *same*
         /// idents `gen_side` already mints once via `fresh_ident` — not reminted per type/kind).
         view_param: Ident,
-        /// Trait-method default body: a `for .. in view_iter(v)` loop for a seq, an
+        /// Trait-method default body: a `for .. in seq_iter(v)` loop for a seq, an
         /// `if let Some(..) = get(v)` for an opt.
         default_body: TokenStream,
+        /// A seq view carries its borrow as a *trait* argument (`SeqView<'a, T>`), so each container
+        /// can name its own iterators — the method therefore declares a lifetime, spells it in the
+        /// bound, and ties the argument to it. An opt view needs none of that: its iterators are
+        /// `Option::into_iter`, so the trait stays `OptView<T>`. These three are the difference,
+        /// empty for an opt.
+        lt_decl: TokenStream,
+        lt_arg: TokenStream,
+        /// `&` / `&mut`, carrying the lifetime for a seq.
+        amp: TokenStream,
+        /// The method's `where`-clause: the per-type predicates, plus `T: 'a` for a seq — which the
+        /// bound's own well-formedness asks for and the caller's `&mut self.field` supplies.
+        method_where: TokenStream,
     }
 
     impl ViewSpec {
@@ -91,10 +103,12 @@ pub(crate) fn gen_side(
             ident: &Ident,
             method: &Ident,
             view_param: Ident,
+            ty: &TokenStream,
+            base_preds: &[WherePredicate],
         ) -> Self {
             let (name, mname) = (ident.to_string(), method.to_string());
             let accessor = side.func(match kind {
-                Container::Seq => "view_iter",
+                Container::Seq => "seq_iter",
                 Container::Opt => "get",
             });
             let view_trait = kind.view_trait();
@@ -102,11 +116,11 @@ pub(crate) fn gen_side(
                 (Container::Seq, true) => format!(
                     "Structurally edit the `{name}` nodes in a `Vec`-like parent slot via a \
                      [`SeqView`](__ast_rt::SeqView) (`push`/`insert`/`remove`/`retain_mut`/\
-                     `view_iter_mut`); default descends each via `{mname}`."
+                     `seq_iter_mut`); default descends each via `{mname}`."
                 ),
                 (Container::Seq, false) => format!(
                     "Observe the `{name}` nodes in a `Vec`-like parent slot via a \
-                     [`SeqView`](__ast_rt::SeqView) (`len`/`get`/`view_iter`) — the slot \
+                     [`SeqView`](__ast_rt::SeqView) (`len`/`get`/`seq_iter`) — the slot \
                      itself, not just each element; default descends each via `{mname}`."
                 ),
                 (Container::Opt, true) => format!(
@@ -132,12 +146,35 @@ pub(crate) fn gen_side(
                     }
                 },
             };
+            let amp = side.amp();
+            let (lt_decl, lt_arg, amp, method_where) = match kind {
+                Container::Seq => {
+                    let mut preds = base_preds.to_vec();
+                    preds.push(parse_quote!(#ty: '__ast_vw));
+                    let amp = if side.mutable {
+                        quote!(&'__ast_vw mut)
+                    } else {
+                        quote!(&'__ast_vw)
+                    };
+                    (
+                        quote!('__ast_vw,),
+                        quote!('__ast_vw,),
+                        amp,
+                        where_clause(&preds),
+                    )
+                }
+                Container::Opt => (quote!(), quote!(), amp, where_clause(base_preds)),
+            };
             ViewSpec {
                 method: side.func(&format!("visit_{}_{}", to_snake(ident), kind.word())),
                 doc,
                 view_trait,
                 view_param,
                 default_body,
+                lt_decl,
+                lt_arg,
+                amp,
+                method_where,
             }
         }
     }
@@ -197,13 +234,14 @@ pub(crate) fn gen_side(
                 .cloned()
                 .collect();
             // Trait method: `where Self: Sized` (struct-only) + the method-param bounds.
-            let trait_where = if struct_only {
+            let trait_where_preds: Vec<WherePredicate> = if struct_only {
                 let mut preds: Vec<WherePredicate> = vec![parse_quote!(Self: ::core::marker::Sized)];
                 preds.extend(method_where.iter().cloned());
-                where_clause(&preds)
+                preds
             } else {
-                quote!()
+                Vec::new()
             };
+            let trait_where = where_clause(&trait_where_preds);
             // Free fn: the trait-level union predicates + this type's method-param bounds.
             let free_where = {
                 let mut preds = union_where.to_vec();
@@ -231,7 +269,15 @@ pub(crate) fn gen_side(
                 (Container::Opt, opt_used, &p_ow),
             ] {
                 if used.contains(&name) {
-                    views.push(ViewSpec::new(kind, side, &ident, &method, view_param.clone()));
+                    views.push(ViewSpec::new(
+                        kind,
+                        side,
+                        &ident,
+                        &method,
+                        view_param.clone(),
+                        &ty,
+                        &trait_where_preds,
+                    ));
                 }
             }
             S {
@@ -354,10 +400,10 @@ pub(crate) fn gen_side(
                 }
                 #(for spec in &s.views) {
                     #[doc = #{&spec.doc}]
-                    fn #{&spec.method}< #(for mp in &s.method_params) { #mp, } #{&spec.view_param}: #{&spec.view_trait}< #{&s.ty} > >(
+                    fn #{&spec.method}< #{&spec.lt_decl} #(for mp in &s.method_params) { #mp, } #{&spec.view_param}: #{&spec.view_trait}< #{&spec.lt_arg} #{&s.ty} > >(
                         &mut self,
-                        v: #amp #{&spec.view_param},
-                    ) #{&s.trait_where} {
+                        v: #{&spec.amp} #{&spec.view_param},
+                    ) #{&spec.method_where} {
                         #{&spec.default_body}
                     }
                 }
@@ -380,7 +426,7 @@ pub(crate) fn gen_side(
                             }
                         }
                         #(for spec in &s.views) {
-                            fn #{&spec.method}< #{&spec.view_param}: #{&spec.view_trait}< #{&s.ty} > >(&mut self, v: #amp #{&spec.view_param}) {
+                            fn #{&spec.method}< #{&spec.lt_decl} #{&spec.view_param}: #{&spec.view_trait}< #{&spec.lt_arg} #{&s.ty} > >(&mut self, v: #{&spec.amp} #{&spec.view_param}) #{&spec.method_where} {
                                 #(for (d, recv) in &delegates) {
                                     <#d as #visit_tr #g_use>::#{&spec.method}(#recv, v);
                                 }

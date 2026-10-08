@@ -195,11 +195,11 @@ mod map_view {
     fn btree_map_reads_and_edits_its_values() {
         let mut m: BTreeMap<&str, Node> = pairs().into_iter().collect();
 
-        let mut seen: Vec<i64> = m.view_iter().map(|n| n.0).collect();
+        let mut seen: Vec<i64> = m.map_iter().map(|n| n.0).collect();
         seen.sort_unstable();
         assert_eq!(seen, vec![1, 2, 3]);
 
-        for n in m.view_iter_mut() {
+        for n in m.map_iter_mut() {
             n.0 *= 10;
         }
         assert_eq!(m["a"], Node(10));
@@ -210,14 +210,14 @@ mod map_view {
     fn hash_map_reads_and_edits_its_values() {
         let mut m: HashMap<&str, Node> = pairs().into_iter().collect();
 
-        let mut seen: Vec<i64> = m.view_iter().map(|n| n.0).collect();
+        let mut seen: Vec<i64> = m.map_iter().map(|n| n.0).collect();
         seen.sort_unstable();
         assert_eq!(seen, vec![1, 2, 3]);
 
-        for n in m.view_iter_mut() {
+        for n in m.map_iter_mut() {
             n.0 += 1;
         }
-        let mut seen: Vec<i64> = m.view_iter().map(|n| n.0).collect();
+        let mut seen: Vec<i64> = m.map_iter().map(|n| n.0).collect();
         seen.sort_unstable();
         assert_eq!(seen, vec![2, 3, 4]);
     }
@@ -225,7 +225,7 @@ mod map_view {
     // A caller generic over the trait: the iterators come back as associated types, so this needs
     // no `Box` and no `dyn`.
     fn total<'a, M: MapView<'a, Node>>(m: &'a M) -> i64 {
-        m.view_iter().map(|n| n.0).sum()
+        m.map_iter().map(|n| n.0).sum()
     }
 
     #[test]
@@ -235,12 +235,12 @@ mod map_view {
     }
 }
 
-// A container the crate has never heard of. `#[seq]` matches no container by name — it accepts any
-// field that peels to exactly one layer — so a consumer plugs its own in with three impls:
-// `SeqView` for the edit view, and `Walk`/`WalkMut` at `Thru<H>` for the descent.
+// Containers the crate has never heard of. `#[seq]`/`#[opt]` match no container by name — they accept
+// any field that peels to exactly one layer — so a consumer plugs its own in with three impls:
+// `SeqView`/`OptView` for the edit view, and `Walk`/`WalkMut` at `Thru<H>` for the descent.
 mod own_container {
     use ast::walk::{Thru, Walk, WalkMut};
-    use ast::{Ast, SeqView};
+    use ast::{Ast, OptView, SeqView};
 
     pub struct Punctuated<T, P>(Vec<T>, core::marker::PhantomData<P>);
 
@@ -250,7 +250,9 @@ mod own_container {
         }
     }
 
-    impl<T, P> SeqView<T> for Punctuated<T, P> {
+    impl<'a, T: 'a, P> SeqView<'a, T> for Punctuated<T, P> {
+        type Iter = core::slice::Iter<'a, T>;
+        type IterMut = core::slice::IterMut<'a, T>;
         fn len(&self) -> usize {
             self.0.len()
         }
@@ -265,6 +267,57 @@ mod own_container {
         }
         fn remove(&mut self, i: usize) -> T {
             self.0.remove(i)
+        }
+        // The borrow is a trait argument, so the container hands back its own iterators — no
+        // `unsafe` anywhere, and `#[seq]` still never learns this type's name.
+        fn seq_iter(&'a self) -> Self::Iter {
+            self.0.iter()
+        }
+        fn seq_iter_mut(&'a mut self) -> Self::IterMut {
+            self.0.iter_mut()
+        }
+    }
+
+    /// A second container of the consumer's own, this one `Option`-shaped: `#[opt]` takes it through
+    /// `OptView` exactly as it takes `Option<T>`.
+    pub struct Optional<T>(Option<T>);
+
+    impl<T> Optional<T> {
+        fn new(value: Option<T>) -> Self {
+            Optional(value)
+        }
+    }
+
+    impl<T> OptView<T> for Optional<T> {
+        fn is_some(&self) -> bool {
+            self.0.is_some()
+        }
+        fn get(&self) -> Option<&T> {
+            self.0.as_ref()
+        }
+        fn get_mut(&mut self) -> Option<&mut T> {
+            self.0.as_mut()
+        }
+        fn set(&mut self, value: T) {
+            self.0 = Some(value);
+        }
+        fn take(&mut self) -> Option<T> {
+            self.0.take()
+        }
+    }
+
+    impl<M, H, V: ?Sized, T: Walk<M, H, V>> Walk<M, Thru<H>, V> for Optional<T> {
+        fn walk(&self, v: &mut V) {
+            if let Some(x) = &self.0 {
+                x.walk(v);
+            }
+        }
+    }
+    impl<M, H, V: ?Sized, T: WalkMut<M, H, V>> WalkMut<M, Thru<H>, V> for Optional<T> {
+        fn walk_mut(&mut self, v: &mut V) {
+            if let Some(x) = &mut self.0 {
+                x.walk_mut(v);
+            }
         }
     }
 
@@ -291,6 +344,8 @@ mod own_container {
     pub struct Doc {
         #[seq]
         pub items: Punctuated<Item, char>,
+        #[opt]
+        pub trailing: Optional<Item>,
     }
 
     pub mod v {
@@ -301,23 +356,28 @@ mod own_container {
     fn a_consumer_container_is_walked() {
         let d = Doc {
             items: Punctuated::new(vec![Item(1), Item(2), Item(3)]),
+            trailing: Optional::new(Some(Item(4))),
         };
         let mut seen = Vec::new();
         d.visit(|i: &Item| seen.push(i.0));
-        assert_eq!(seen, vec![1, 2, 3]);
+        assert_eq!(seen, vec![1, 2, 3, 4], "both consumer containers descended");
     }
 
     #[test]
     fn a_consumer_container_takes_a_seq_edit() {
         struct DropOdd;
         impl v::VisitMut for DropOdd {
-            fn visit_item_seq_mut<S: SeqView<Item>>(&mut self, s: &mut S) {
+            fn visit_item_seq_mut<'v, S: SeqView<'v, Item>>(&mut self, s: &'v mut S) {
                 s.retain_mut(|i| i.0 % 2 == 0);
+            }
+            fn visit_item_opt_mut<O: OptView<Item>>(&mut self, o: &mut O) {
+                o.take();
             }
         }
 
         let mut d = Doc {
             items: Punctuated::new(vec![Item(1), Item(2), Item(3), Item(4)]),
+            trailing: Optional::new(Some(Item(9))),
         };
         d.visit_mut(&mut DropOdd);
         let mut left = Vec::new();
@@ -325,8 +385,155 @@ mod own_container {
         assert_eq!(
             left,
             vec![2, 4],
-            "the view edited a container `ast` never names"
+            "both views edited containers `ast` never names"
         );
+    }
+
+    // The shared side of both views: the slot itself, read through the consumer's own impls.
+    #[test]
+    fn a_consumer_container_is_read_through_its_view() {
+        #[derive(Default)]
+        struct Shape {
+            len: usize,
+            iterated: Vec<u32>,
+            trailing: bool,
+        }
+        impl v::Visit for Shape {
+            fn visit_item_seq<'v, S: SeqView<'v, Item>>(&mut self, s: &'v S) {
+                self.len = s.len();
+                self.iterated = s.seq_iter().map(|i| i.0).collect();
+            }
+            fn visit_item_opt<O: OptView<Item>>(&mut self, o: &O) {
+                self.trailing = o.is_some();
+            }
+        }
+
+        let d = Doc {
+            items: Punctuated::new(vec![Item(1), Item(2), Item(3)]),
+            trailing: Optional::new(None),
+        };
+        let mut shape = Shape::default();
+        d.visit(&mut shape);
+        assert_eq!(shape.len, 3);
+        assert_eq!(shape.iterated, vec![1, 2, 3], "through `seq_iter`");
+        assert!(!shape.trailing);
+    }
+}
+
+// A map the crate has never heard of. `MapView` is descent-only — the node sits in the VALUE slot, so
+// there is no `#[seq]`/`#[opt]` marker and nothing `visitor!` generates calls the trait. A consumer
+// still gets both halves: `Walk`/`WalkMut` at `Thru<H>` for the generated descent, and `MapView` for
+// a traversal it writes itself.
+mod own_map {
+    use ast::walk::{Thru, Walk, WalkMut};
+    use ast::{Ast, MapView};
+
+    /// An association list, which is a map whose values are *projected* out of its entries rather
+    /// than stored apart. So its iterators are `Map<slice::Iter<..>, fn(..) -> ..>` — nameable
+    /// because the projection is a function item, not a closure. That is the point of the borrow
+    /// being a trait parameter: a projecting map still needs no `Box<dyn Iterator>`.
+    pub struct Registry<K, V>(Vec<(K, V)>);
+
+    impl<K, V> Registry<K, V> {
+        fn new(entries: Vec<(K, V)>) -> Self {
+            Registry(entries)
+        }
+    }
+
+    fn value<K, V>(e: &(K, V)) -> &V {
+        &e.1
+    }
+    fn value_mut<K, V>(e: &mut (K, V)) -> &mut V {
+        &mut e.1
+    }
+
+    impl<'a, K: 'a, V: 'a> MapView<'a, V> for Registry<K, V> {
+        type Iter = core::iter::Map<core::slice::Iter<'a, (K, V)>, fn(&'a (K, V)) -> &'a V>;
+        type IterMut =
+            core::iter::Map<core::slice::IterMut<'a, (K, V)>, fn(&'a mut (K, V)) -> &'a mut V>;
+        fn map_iter(&'a self) -> Self::Iter {
+            self.0.iter().map(value as fn(&'a (K, V)) -> &'a V)
+        }
+        fn map_iter_mut(&'a mut self) -> Self::IterMut {
+            self.0
+                .iter_mut()
+                .map(value_mut as fn(&'a mut (K, V)) -> &'a mut V)
+        }
+    }
+
+    impl<M, H, Vis: ?Sized, K, T: Walk<M, H, Vis>> Walk<M, Thru<H>, Vis> for Registry<K, T> {
+        fn walk(&self, v: &mut Vis) {
+            for (_, t) in &self.0 {
+                t.walk(v);
+            }
+        }
+    }
+    impl<M, H, Vis: ?Sized, K, T: WalkMut<M, H, Vis>> WalkMut<M, Thru<H>, Vis> for Registry<K, T> {
+        fn walk_mut(&mut self, v: &mut Vis) {
+            for (_, t) in &mut self.0 {
+                t.walk_mut(v);
+            }
+        }
+    }
+
+    #[derive(Ast)]
+    pub struct Item(pub u32);
+
+    #[derive(Ast)]
+    #[subast(crate::own_map::Item)]
+    pub struct Doc {
+        // No marker: a keyed slot has no positional edit, so the field is walked and nothing else.
+        pub table: Registry<&'static str, Item>,
+    }
+
+    pub mod v {
+        ast::visitor!(super::Item, super::Doc);
+    }
+
+    fn doc() -> Doc {
+        Doc {
+            table: Registry::new(vec![("a", Item(1)), ("b", Item(2)), ("c", Item(3))]),
+        }
+    }
+
+    #[test]
+    fn a_consumer_map_is_walked() {
+        let mut seen = Vec::new();
+        doc().visit(|i: &Item| seen.push(i.0));
+        assert_eq!(seen, vec![1, 2, 3], "descended into the value slot");
+    }
+
+    #[test]
+    fn a_consumer_map_is_walked_mutably() {
+        let mut d = doc();
+        d.visit_mut(|i: &mut Item| i.0 *= 10);
+        let mut seen = Vec::new();
+        d.visit(|i: &Item| seen.push(i.0));
+        assert_eq!(seen, vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn the_map_view_reads_and_edits_the_values() {
+        let mut r = doc().table;
+        assert_eq!(r.map_iter().map(|i| i.0).collect::<Vec<_>>(), vec![1, 2, 3]);
+        for i in r.map_iter_mut() {
+            i.0 += 100;
+        }
+        assert_eq!(
+            r.map_iter().map(|i| i.0).collect::<Vec<_>>(),
+            vec![101, 102, 103]
+        );
+    }
+
+    // The same generic caller the std maps get: the iterator arrives as an associated type, so this
+    // needs no `Box` and no `dyn` even though `Registry` projects its values out of a pair.
+    fn total<'a, M: MapView<'a, Item>>(m: &'a M) -> u32 {
+        m.map_iter().map(|i| i.0).sum()
+    }
+
+    #[test]
+    fn a_generic_caller_names_the_projected_iterator() {
+        assert_eq!(total(&doc().table), 6);
     }
 }
 

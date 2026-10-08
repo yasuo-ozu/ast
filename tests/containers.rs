@@ -264,14 +264,14 @@ mod own_container {
         }
     }
 
-    impl<T, P> SeqView<T> for Punctuated<T, P> {
+    impl<'a, T: 'a, P> SeqView<'a, T> for Punctuated<T, P> {
         fn len(&self) -> usize {
             self.0.len()
         }
     }
 
     // Resizable, so it gets the edit half too — which is what a `#[seq]` field's `&mut` side asks for.
-    impl<T, P> SeqEdit<T> for Punctuated<T, P> {
+    impl<'a, T: 'a, P: Default> SeqEdit<'a, T> for Punctuated<T, P> {
         fn insert(&mut self, i: usize, value: T) {
             self.0.insert(i, value)
         }
@@ -303,7 +303,21 @@ mod own_container {
         }
     }
 
-    impl<T> OptView<T> for Optional<T> {
+    // `OptView`'s supertrait is `Elements`, so a consumer's `Option`-shaped container has to iterate
+    // as well — even though an opt slot holds at most one node and the view reaches it through
+    // `get`/`get_mut`. `Option`'s own iterators do the job.
+    impl<'a, T: 'a> Elements<'a, T> for Optional<T> {
+        type Iter = core::option::Iter<'a, T>;
+        type IterMut = core::option::IterMut<'a, T>;
+        fn elements(&'a self) -> Self::Iter {
+            self.0.iter()
+        }
+        fn elements_mut(&'a mut self) -> Self::IterMut {
+            self.0.iter_mut()
+        }
+    }
+
+    impl<'a, T: 'a> OptView<'a, T> for Optional<T> {
         fn is_some(&self) -> bool {
             self.0.is_some()
         }
@@ -312,7 +326,7 @@ mod own_container {
         }
     }
 
-    impl<T> OptEdit<T> for Optional<T> {
+    impl<'a, T: 'a> OptEdit<'a, T> for Optional<T> {
         fn get_mut(&mut self) -> Option<&mut T> {
             self.0.as_mut()
         }
@@ -385,13 +399,10 @@ mod own_container {
     fn a_consumer_container_takes_a_seq_edit() {
         struct DropOdd;
         impl v::VisitMut for DropOdd {
-            fn visit_item_seq_mut<'a, S: SeqEdit<Item> + Elements<'a, Item>>(
-                &mut self,
-                s: &'a mut S,
-            ) {
+            fn visit_item_seq_mut<'a, S: SeqEdit<'a, Item>>(&mut self, s: &'a mut S) {
                 s.retain_mut(|i| i.0 % 2 == 0);
             }
-            fn visit_item_opt_mut<O: OptEdit<Item>>(&mut self, o: &mut O) {
+            fn visit_item_opt_mut<'a, O: OptEdit<'a, Item>>(&mut self, o: &'a mut O) {
                 o.take();
             }
         }
@@ -423,11 +434,11 @@ mod own_container {
             // The seq view's bound names `Elements` too, so the consumer's *own* iterator —
             // `Punctuated::iter`, here — is reachable from inside the override, next to `len` and
             // the `Index` supertrait.
-            fn visit_item_seq<'a, S: SeqView<Item> + Elements<'a, Item>>(&mut self, s: &'a S) {
+            fn visit_item_seq<'a, S: SeqView<'a, Item>>(&mut self, s: &'a S) {
                 self.len = s.len();
                 self.iterated = s.elements().map(|i| i.0).collect();
             }
-            fn visit_item_opt<O: OptView<Item>>(&mut self, o: &O) {
+            fn visit_item_opt<'a, O: OptView<'a, Item>>(&mut self, o: &'a O) {
                 self.trailing = o.is_some();
             }
         }

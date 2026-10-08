@@ -148,34 +148,22 @@ pub(crate) fn gen_side(
                      not just the element; default descends it via `{mname}`."
                 ),
             };
-            let amp = side.amp();
-            // A seq view is quantified over `lt`: the slot comes in as `&lt V` so that
-            // `Elements<lt, _>` applies to it, and `V: Ty` has to outlive `lt` for that bound to be
-            // well-formed. An opt view holds one element, reached by `get`/`get_mut`, and stays
-            // lifetime-free.
-            let (lt_decl, bound, amp, where_clause) = match kind {
-                Container::Seq => (
-                    quote!(#lt,),
-                    quote!( #view_trait<#ty> + __ast_rt::Elements<#lt, #ty> ),
-                    // `&'lt` / `&'lt mut` — the lifetime goes *inside* the reference, so this
-                    // cannot be `side.amp()`, which is already the whole `&mut`.
-                    if side.mutable {
-                        quote!( & #lt mut )
-                    } else {
-                        quote!( & #lt )
-                    },
-                    {
-                        let mut preds = trait_where_preds.to_vec();
-                        preds.push(parse_quote!( #ty: #lt ));
-                        where_clause(&preds)
-                    },
-                ),
-                Container::Opt => (
-                    TokenStream::new(),
-                    quote!( #view_trait<#ty> ),
-                    amp,
-                    where_clause(trait_where_preds),
-                ),
+            // Every view is quantified over `lt` now: all four have `Elements<'lt, _>` in their
+            // supertrait chain, so the slot comes in as `&lt V` / `&lt mut V`, and `Ty: 'lt` has to
+            // hold for the bound to be well-formed. One shape for both kinds.
+            let lt_decl = quote!(#lt,);
+            let bound = quote!( #view_trait<#lt, #ty> );
+            // `&'lt` / `&'lt mut` — the lifetime goes *inside* the reference, so this cannot be
+            // `side.amp()`, which is already the whole `&mut`.
+            let amp = if side.mutable {
+                quote!( & #lt mut )
+            } else {
+                quote!( & #lt )
+            };
+            let where_clause = {
+                let mut preds = trait_where_preds.to_vec();
+                preds.push(parse_quote!( #ty: #lt ));
+                where_clause(&preds)
             };
             let default_body = match kind {
                 // Through the container's own iterator, which is the whole point of the `Elements`

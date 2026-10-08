@@ -4,9 +4,9 @@
 //! usable across a `push`, a `remove` and a walk in any order. [`View`] is the **iteration** half and
 //! carries its borrow as a trait argument, so every container names its own iterators.
 //!
-//! All three are bare-element: `Vec<T>: SeqView<T>`, `Option<T>: OptView<T>`. A transparent
+//! All three are bare-element: `Vec<T>: SeqView<'a, T>`, `Option<T>: OptView<'a, T>`. A transparent
 //! single-slot wrapper (`Box<T>`) is a `Walk` (always one node), so a `Vec<Box<T>>` is
-//! `SeqView<Box<T>>` — the visitor descends the box as a further `Walk` level.
+//! `SeqView<'a, Box<T>>` — the visitor descends the box as a further `Walk` level.
 
 use ast::{Elements, OptEdit, OptView, SeqEdit, SeqView};
 use std::collections::{BTreeMap, HashMap, LinkedList, VecDeque};
@@ -103,7 +103,7 @@ fn a_generic_caller_names_the_iterator_as_an_associated_type() {
 #[test]
 fn retain_mut_visits_then_drops() {
     let mut v = vec![1, 2, 3, 4];
-    <Vec<i32> as SeqEdit<i32>>::retain_mut(&mut v, |x| {
+    <Vec<i32> as SeqEdit<'_, i32>>::retain_mut(&mut v, |x| {
         *x += 1;
         *x % 2 == 0
     });
@@ -113,16 +113,16 @@ fn retain_mut_visits_then_drops() {
 #[test]
 fn structural_index_ops() {
     let mut v = vec![1, 3];
-    <Vec<i32> as SeqEdit<i32>>::insert(&mut v, 1, 2);
+    <Vec<i32> as SeqEdit<'_, i32>>::insert(&mut v, 1, 2);
     assert_eq!(v, vec![1, 2, 3]);
-    assert_eq!(<Vec<i32> as SeqEdit<i32>>::remove(&mut v, 0), 1);
-    <Vec<i32> as SeqEdit<i32>>::push(&mut v, 9);
+    assert_eq!(<Vec<i32> as SeqEdit<'_, i32>>::remove(&mut v, 0), 1);
+    <Vec<i32> as SeqEdit<'_, i32>>::push(&mut v, 9);
     assert_eq!(v, vec![2, 3, 9]);
 }
 
 // The point of keeping the borrow off `SeqView`: a generic caller can read the slot, edit it, and
 // read it again, in one function, without the borrow checker objecting.
-fn edit_in_any_order<V: SeqEdit<i32>>(v: &mut V) {
+fn edit_in_any_order<'a, V: SeqEdit<'a, i32>>(v: &'a mut V) {
     v.push(4);
     for i in 0..v.len() {
         v[i] *= 2;
@@ -144,7 +144,7 @@ fn a_generic_caller_edits_and_reads_in_one_borrow() {
 
 #[test]
 fn vec_of_box_is_bare_element() {
-    // Bare-element: `Vec<Box<T>>: SeqView<Box<T>>` yields `&mut Box<T>` (the element is the box). The
+    // Bare-element: `Vec<Box<T>>: SeqView<'_, Box<T>>` yields `&mut Box<T>` (the element is the box). The
     // visitor descends the box as a further `Walk` level; here we edit through the box directly.
     let mut v: Vec<Box<i32>> = vec![Box::new(1), Box::new(2)];
     for x in v.elements_mut() {
@@ -156,7 +156,7 @@ fn vec_of_box_is_bare_element() {
 #[test]
 fn seqview_covers_the_fixed_size_shapes() {
     // `SeqView` without `SeqEdit`: readable, indexable, walkable — but it cannot grow.
-    fn sum<V: SeqView<i32> + ?Sized>(v: &V) -> i32 {
+    fn sum<'a, V: SeqView<'a, i32> + ?Sized>(v: &'a V) -> i32 {
         (0..v.len()).map(|i| v[i]).sum()
     }
     let a = [1, 2, 3];
@@ -167,7 +167,7 @@ fn seqview_covers_the_fixed_size_shapes() {
 
     let mut a = [1, 2, 3];
     a[0] = 10; // through `IndexMut`, the supertrait
-    assert_eq!(<[i32; 3] as SeqView<i32>>::len(&a), 3);
+    assert_eq!(<[i32; 3] as SeqView<'_, i32>>::len(&a), 3);
 }
 
 // The shape a generated `visit_<t>_seq`/`_seq_mut` has: the two traits together, over the lifetime
@@ -175,10 +175,10 @@ fn seqview_covers_the_fixed_size_shapes() {
 // inside a visitor override, and it works for a non-`'static` element — see `borrowed_elements`.
 #[test]
 fn the_two_traits_together_iterate_and_edit_a_view() {
-    fn sum<'a, V: SeqView<i32> + Elements<'a, i32> + ?Sized>(v: &'a V) -> i32 {
+    fn sum<'a, V: SeqView<'a, i32> + ?Sized>(v: &'a V) -> i32 {
         v.elements().sum()
     }
-    fn bump_then_grow<V: SeqEdit<i32>>(v: &mut V) {
+    fn bump_then_grow<'a, V: SeqEdit<'a, i32>>(v: &'a mut V) {
         // `elements_mut` takes the whole `'a` borrow, so a body that also resizes indexes instead.
         for i in 0..v.len() {
             v[i] += 1;
@@ -239,36 +239,51 @@ fn push_and_retain_mut_prefer_inherent_over_seqview() {
         6,
         "slice `.iter()` unshadowed by the views"
     );
-    assert_eq!(<Vec<i32> as SeqView<i32>>::len(&v), 2); // trait still reachable via UFCS
-
-    // Both edit views are object-safe: nothing in them mentions a borrow or an associated type.
-    let _seq: &dyn SeqView<i32> = &v;
-    let _edit: &dyn SeqEdit<i32> = &v;
-    let _opt: &dyn OptView<i32> = &Some(1);
-    let _oedit: &dyn OptEdit<i32> = &Some(1);
+    assert_eq!(<Vec<i32> as SeqView<'_, i32>>::len(&v), 2); // trait still reachable via UFCS
 }
 
-// `retain_mut` is the one `SeqEdit` method that cannot ride a vtable — it takes an `impl FnMut`.
-// Everything else does, `push` included: its provided body is `insert` at `len`, which needs no
-// `Self: Sized`. Pinned because the obvious reading of "`push` has a default body" is that it must
-// be `Sized`, and adding that back silently costs every `dyn` caller.
+// What making `Elements` a supertrait cost: a view is no longer *usefully* object-safe. `dyn` has to
+// name every associated type in the chain, and those are the container's own iterators — so the
+// erased type is right back in the annotation, which is the one thing `dyn` was for:
+//
+//     let _: &dyn SeqView<'_, i32> = &v;
+//     error[E0191]: the value of the associated types `IterMut`, `Iter` in `Elements<'_, i32>`
+//                   must be specified
+//
+// Spelled out it still works, which is what this pins — the traits are object-*safe*, just not
+// object-*useful*. Nothing in the crate or in generated code needs it; the views reach a visitor as
+// a generic parameter, never as a `dyn`.
 #[test]
-fn the_whole_edit_view_rides_a_trait_object_except_retain_mut() {
+fn a_dyn_view_now_has_to_pin_its_iterators() {
     let mut v: Vec<i32> = vec![1, 2, 3];
-    let d: &mut dyn SeqEdit<i32> = &mut v;
-    d.push(4);
-    d.insert(0, 0);
-    assert_eq!(d.remove(1), 1);
-    assert_eq!(d.len(), 4);
-    assert_eq!(d[0], 0);
-    d[0] = 9;
+
+    let r: &dyn SeqView<i32, Iter = core::slice::Iter<i32>, IterMut = core::slice::IterMut<i32>> =
+        &v;
+    assert_eq!(r.len(), 3);
+    assert_eq!(r[1], 2);
+
+    let w: &mut dyn SeqEdit<
+        i32,
+        Iter = core::slice::Iter<i32>,
+        IterMut = core::slice::IterMut<i32>,
+    > = &mut v;
+    w.push(4);
+    w.insert(0, 0);
+    assert_eq!(w.remove(1), 1);
+    assert_eq!(w.len(), 4);
+    w[0] = 9;
     assert_eq!(v, vec![9, 2, 3, 4]);
 
-    let o: &mut dyn OptEdit<i32> = &mut None;
-    o.set(1);
-    assert_eq!(o.get(), Some(&1));
-    assert_eq!(o.take(), Some(1));
-    assert!(o.is_none());
+    let mut o: Option<i32> = None;
+    let e: &mut dyn OptEdit<
+        i32,
+        Iter = core::option::Iter<i32>,
+        IterMut = core::option::IterMut<i32>,
+    > = &mut o;
+    e.set(1);
+    assert_eq!(e.get(), Some(&1));
+    assert_eq!(e.take(), Some(1));
+    assert!(e.is_none());
 }
 
 // The provided `retain_mut` is quadratic (it can only shrink through `remove`), and a generated
@@ -276,7 +291,7 @@ fn the_whole_edit_view_rides_a_trait_object_except_retain_mut() {
 // array-backed containers forward to their own. This pins the behaviour; the cost is in the doc.
 #[test]
 fn retain_mut_and_push_go_through_the_containers_own() {
-    fn edit<V: SeqEdit<i32>>(v: &mut V) {
+    fn edit<'a, V: SeqEdit<'a, i32>>(v: &'a mut V) {
         v.retain_mut(|x| {
             *x *= 10;
             *x != 20

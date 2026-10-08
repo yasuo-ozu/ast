@@ -89,7 +89,7 @@ A `#[seq]` field hands you the slot instead of one element, so you can see an el
 its neighbours — and, on the `mut` side, change the list.
 
 ```rust
-use ast::{Ast, Elements, SeqEdit};
+use ast::{Ast, SeqEdit};
 
 #[derive(Ast)]
 pub enum Expr {
@@ -104,7 +104,7 @@ pub mod visit {
 struct DropLits;
 impl visit::Visit for DropLits {}
 impl visit::VisitMut for DropLits {
-    fn visit_expr_seq_mut<'a, V: SeqEdit<Expr> + Elements<'a, Expr>>(&mut self, v: &'a mut V) {
+    fn visit_expr_seq_mut<'a, V: SeqEdit<'a, Expr>>(&mut self, v: &'a mut V) {
         v.retain_mut(|e| !matches!(e, Expr::Lit(_)));
     }
 }

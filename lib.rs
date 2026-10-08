@@ -128,9 +128,7 @@ pub use ast_macro::Ast;
 ///
 ///     // Only because a field is marked `#[seq]`. It takes the list, not an element — and
 ///     // `Elements` is in the bound, so the container's own iterator is reachable here.
-///     fn visit_item_seq<'a, V: SeqView<Item> + Elements<'a, Item>>(&mut self, v: &'a V)
-///         where Item: 'a
-///     {
+///     fn visit_item_seq<'a, V: SeqView<'a, Item>>(&mut self, v: &'a V) where Item: 'a {
 ///         for e in v.elements() { self.visit_item(e); }
 ///     }
 /// }
@@ -190,7 +188,7 @@ pub use ast_macro::Ast;
 ///
 /// fn main() {
 ///     use grammar::{visit, Expr};
-///     use ast::{Elements, SeqEdit};
+///     use ast::SeqEdit;
 ///
 ///     // A closure sees one node type.
 ///     let mut n = 0;
@@ -214,10 +212,7 @@ pub use ast_macro::Ast;
 ///     // `#[seq]` adds `visit_expr_seq_mut`, which hands over the list, not one element.
 ///     struct DropLits;
 ///     impl visit::VisitMut for DropLits {
-///         fn visit_expr_seq_mut<'a, V: SeqEdit<Expr> + Elements<'a, Expr>>(
-///             &mut self,
-///             v: &'a mut V,
-///         ) {
+///         fn visit_expr_seq_mut<'a, V: SeqEdit<'a, Expr>>(&mut self, v: &'a mut V) {
 ///             v.retain_mut(|e| !matches!(e, Expr::Lit(_)));
 ///         }
 ///     }
@@ -233,25 +228,25 @@ pub use ast_macro::Ast;
 /// `visit_<node>_seq` and `visit_<node>_opt`, plus their `_mut` halves. They are handed the whole
 /// slot rather than one element, and like the others they come with a body that just walks on.
 ///
-/// Reading, you get a `&impl SeqView<T>` or `&impl OptView<T>`; editing, a `&mut impl SeqEdit<T>`
-/// or `&mut impl OptEdit<T>`. That shows you what `visit_<node>`
+/// Reading, you get a `&impl SeqView<'a, T>` or `&impl OptView<'a, T>`; editing, a
+/// `&mut impl SeqEdit<'a, T>` or `&mut impl OptEdit<'a, T>`. That shows you what `visit_<node>`
 /// cannot: how many elements there are, which index one has, what sits next to it. Editing, you
 /// get a `&mut`, so you can `push`, `remove` or `retain_mut` — see the example above.
 ///
-/// A seq view carries a lifetime, because its bound is `SeqView<T> + Elements<'a, T>` and the slot
-/// arrives as `&'a V`:
+/// Every view carries a lifetime — it is the lifetime of the slot, which arrives as `&'a V`:
 ///
 /// ```ignore
-/// fn visit_item_seq<'a, V: SeqView<Item> + Elements<'a, Item>>(&mut self, v: &'a V)
-///     where Item: 'a;
+/// fn visit_item_seq<'a, V: SeqView<'a, Item>>(&mut self, v: &'a V) where Item: 'a;
 /// ```
 ///
-/// So all three ways of reaching the elements are open inside an override: indexing — `&v[i]`
-/// through [`SeqView`]'s `Index` supertrait, `&mut v[i]` through [`SeqEdit`]'s `IndexMut` — and
-/// iteration through [`Elements::elements`] / [`Elements::elements_mut`], which hand back the
-/// container's **own** iterator. `self` is borrowed separately from the slot, so an override may
-/// iterate and call back into the visitor in the same body. An opt view needs no iterator and takes
-/// no lifetime: [`OptView::get`] is the element.
+/// One bound, because [`Elements`] is a **supertrait** of all four views. So every way of reaching
+/// the elements is open inside an override without naming a second trait: indexing — `&v[i]` through
+/// [`SeqView`]'s `Index` supertrait, `&mut v[i]` through [`SeqEdit`]'s `IndexMut` — and iteration
+/// through [`Elements::elements`] / [`Elements::elements_mut`], which hand back the container's
+/// **own** iterator. `self` is
+/// borrowed separately from the slot, so an override may iterate and call back into the visitor in
+/// the same body. An opt view reaches its ≤1 node by [`OptView::get`]; it carries the lifetime too,
+/// for the supertrait's sake.
 ///
 /// `elements_mut` takes the view's whole `'a` borrow, so it is one pass and the slot is spent after
 /// it; an override that wants to walk the elements *and* resize indexes instead (`&mut v[i]`, then
@@ -262,7 +257,7 @@ pub use ast_macro::Ast;
 /// predicate over:
 ///
 /// ```ignore
-/// fn visit_stmt_seq_mut<'a, V: SeqEdit<Stmt<S>> + Elements<'a, Stmt<S>>>(&mut self, v: &'a mut V)
+/// fn visit_stmt_seq_mut<'a, V: SeqEdit<'a, Stmt<S>>>(&mut self, v: &'a mut V)
 ///     where Stmt<S>: 'a                       // omit this and: error[E0309]: the parameter type
 /// { .. }                                      // `S` may not live long enough
 /// ```
@@ -439,16 +434,27 @@ pub trait Repeater<const INDEX: usize> {
 // cloning of existing nodes). The view is a trait implemented directly on the container types — so the
 // descent passes `&mut self.field` with no wrapper.
 //
-// Two of them are about **editing** a slot, and carry no borrow of their own: [`SeqView`] (Vec-like,
-// unbounded, positional) and [`OptView`] (Option-like, ≤1), so a view stays usable across a `push`, a
-// `remove` and a walk, in any order. The third, [`Elements`], is about **iterating** whatever a
-// container holds, and carries its borrow as a trait parameter so each container can name its own
-// iterators. They stay apart because the positional half has to work for a slot that is only read, or
-// only resized; a generated seq view asks for both at once, over the lifetime of the slot it is handed.
+// [`Elements`] is the root: iteration both ways, with the borrow as a trait parameter so each
+// container names its own iterator types. On top of it sit the four slot views — [`SeqView`]
+// (Vec-like, positional) / [`SeqEdit`], and [`OptView`] (Option-like, ≤1) / [`OptEdit`] — so one
+// bound on a generated method reaches reading, iterating and editing at once.
+//
+// The read/write line is drawn once, at the view level, and not again underneath: every container
+// that iterates at all iterates both ways (`iter_mut` is what a `#[seq]`/`#[opt]` descent needs), so
+// a separate `&mut` iteration trait would have had no implementor of its own. What a fixed-size
+// shape lacks is `insert`/`remove`, which is exactly what [`SeqEdit`] adds.
+//
+// The views' own methods are positional and carry no borrow, so a view stays usable across a `push`,
+// a `remove` and a walk, in any order; it is `elements_mut` alone that takes the whole `'a`.
 //
 // These are **edit** views only: the descent itself goes through [`walk::Walk`]. The element type is a
-// **type parameter** (`SeqView<T>`, not an associated type), and the traits are bare-element — a
+// **type parameter** (`SeqView<'a, T>`, not an associated type), and the traits are bare-element — a
 // `#[seq]`/`#[opt]` field must be a bare `Vec<T>`/`Option<T>`, never a wrapped one.
+//
+// The lifetime costs object safety: `dyn SeqView<'_, T>` has to pin `Elements::Iter`, which is the
+// container's own iterator — so the erased type reappears in the annotation. Nothing here needs a
+// `dyn` view (a generated method takes its view as a generic parameter), and `tests/seqview_iter.rs`
+// pins what is still possible.
 //
 // The type parameter is also what keeps these implementable downstream. A consumer whose nodes are
 // local may put any of these on a container it does not own —
@@ -456,23 +462,22 @@ pub trait Repeater<const INDEX: usize> {
 // appears in the trait reference. With the element as an *associated* type the trait reference would
 // be `Elements for BTreeSet<MyNode>`, naming nothing local, and the orphan rule would refuse it.
 
-/// Iteration over whatever a container holds: the elements of a sequence, the ≤1 node of an `Option`,
-/// the **values** of a map. One trait for every shape, because iteration is the one thing they all
-/// agree on — a map has no positional edit, and a sequence has no key.
+/// Iteration over whatever a container holds, by shared reference: the elements of a sequence, the
+/// ≤1 node of an `Option`, the **values** of a map. One trait for every shape, because iteration is
+/// the one thing they all agree on — a map has no positional edit, and a sequence has no key.
 ///
-/// The borrow is a parameter of the **trait** rather than of the methods, so the two iterators can be
-/// named as associated types: a `Vec` hands back the slice iterators, a map its own `Values`/
-/// `ValuesMut`, an association list a `Map<slice::Iter<..>, fn(..) -> ..>`. No `dyn`, no allocation,
-/// and no `unsafe` — an iterator synthesized here out of repeated indexing would have to widen each
-/// element borrow to the whole walk, which is sound only if every impl yields a distinct element per
-/// index, and a safe trait cannot promise that. A GAT would put the lifetime back on the method, and
-/// costs 1.65.
+/// The borrow is a parameter of the **trait** rather than of the method, so the iterator can be named
+/// as an associated type: a `Vec` hands back the slice iterator, a map its own `Values`, an
+/// association list a `Map<slice::Iter<..>, fn(..) -> ..>`. No `dyn`, no allocation, and no `unsafe` —
+/// an iterator synthesized here out of repeated indexing would have to widen each element borrow to
+/// the whole walk, which is sound only if every impl yields a distinct element per index, and a safe
+/// trait cannot promise that. A GAT would put the lifetime back on the method, and costs 1.65.
 ///
-/// Implement it for your own container and both paths open at once: code holding the container
-/// directly calls [`elements`](Self::elements), and so does a `visit_<t>_seq`/`_seq_mut` override,
-/// whose view param is bound `SeqView<T> + Elements<'a, T>` for the `'a` of the slot it was handed.
-/// A container that is only ever walked or structurally edited can skip it — [`walk::Walk`] and
-/// [`SeqEdit`]/[`OptEdit`] need no iterator — but every `SeqView` this crate ships implements it.
+/// This is the root of all four slot views: every one of them has it as a supertrait, so anything a
+/// generated visitor hands you can be iterated — and `elements_mut` is reachable from the `&mut`
+/// side of any of them. The read/write line lives one level up, at [`SeqView`]/[`SeqEdit`] and
+/// [`OptView`]/[`OptEdit`], where it is about *resizing*; a container that iterates at all iterates
+/// both ways, so splitting this trait too would have drawn a line with nothing on one side of it.
 pub trait Elements<'a, T: 'a> {
     /// The container's own by-reference iterator.
     type Iter: Iterator<Item = &'a T>;
@@ -489,14 +494,15 @@ pub trait Elements<'a, T: 'a> {
 /// A readable, **sequence-like** view of an AST collection field (`Vec`, `VecDeque`, a slice, an
 /// array, or a container of your own — implement it and `#[seq]` accepts that container, since no
 /// container name is ever matched). Bare-element: the element type is `T` itself, never a wrapped
-/// `Box<T>`. A generated `visit_<t>_seq(&self, &impl SeqView<T>)` receives one; its `&mut` half
+/// `Box<T>`. A generated `visit_<t>_seq(&mut self, &'a impl SeqView<'a, T>)` receives one; its `&mut` half
 /// receives a [`SeqEdit`], which is where writing lives.
 ///
-/// Purely positional, and so free of any borrow of its own: an override may read, walk and edit in
+/// Its own methods are positional and free of any borrow: an override may read, walk and edit in
 /// whatever order it likes. Element access is [`Index`] — `&v[i]`, panicking past the end like every
 /// other indexed container — so the trait itself declares only what indexing cannot say: how long
-/// the slot is. Iteration is [`Elements`], a separate trait so that a container keeps its own
-/// iterator types; a generated seq view asks for both, so `v.elements()` works inside an override.
+/// the slot is. Iteration comes from the [`Elements`] supertrait, which is where the `'a` goes: it
+/// stays a separate trait so a container keeps its own iterator types, and so the shapes that cannot
+/// index (a map, a `LinkedList`) can still be iterated.
 ///
 /// Writing is [`SeqEdit`]: `&mut v[i]` through its `IndexMut`, and `insert`/`remove` for the size. A
 /// fixed-size slot — a slice, an array — is a `SeqView` and not a `SeqEdit`, which is the whole reason
@@ -504,7 +510,7 @@ pub trait Elements<'a, T: 'a> {
 /// the `&mut` side cannot.
 ///
 /// [`Index`]: core::ops::Index
-pub trait SeqView<T>: core::ops::Index<usize, Output = T> {
+pub trait SeqView<'a, T: 'a>: core::ops::Index<usize, Output = T> + Elements<'a, T> {
     fn len(&self) -> usize;
 
     fn is_empty(&self) -> bool {
@@ -514,12 +520,12 @@ pub trait SeqView<T>: core::ops::Index<usize, Output = T> {
 
 /// A [`SeqView`] that can also grow and shrink — what a `#[seq]` field's `&mut` side is handed, and
 /// what makes `push`/`remove`/`retain_mut` available. Every container that can resize implements both.
-pub trait SeqEdit<T>: SeqView<T> + core::ops::IndexMut<usize, Output = T> {
+pub trait SeqEdit<'a, T: 'a>: SeqView<'a, T> + core::ops::IndexMut<usize, Output = T> {
     /// Insert before index `i` (`i == len` appends).
     fn insert(&mut self, i: usize, value: T);
     fn remove(&mut self, i: usize) -> T;
 
-    /// Append. No `Self: Sized`, so it works through `&mut dyn SeqEdit<T>` as well.
+    /// Append. No `Self: Sized`: it is the one resizing method that still rides a vtable.
     fn push(&mut self, value: T) {
         let n = self.len();
         self.insert(n, value);
@@ -550,10 +556,11 @@ pub trait SeqEdit<T>: SeqView<T> + core::ops::IndexMut<usize, Output = T> {
 
 /// A mutable, **Option-like** view (≤1 element) of an AST `Option` field, bare-element (a nested
 /// `Box`-like layer descends separately, through [`walk::Walk`]). A generated
-/// `visit_<t>_opt_mut(&mut self, &mut impl OptEdit<T>)` receives one, and `visit_<t>_opt` a `&`.
-/// Holding at most one element, it needs no iterator and so — unlike a seq view — takes no
-/// lifetime: [`get`](Self::get) is the element.
-pub trait OptView<T> {
+/// `visit_<t>_opt_mut(&mut self, &mut impl OptEdit<'a, T>)` receives one, and `visit_<t>_opt` a `&`.
+/// [`get`](Self::get) is the element — indexing would mean nothing for a ≤1 slot. The [`Elements`]
+/// supertrait is what the `'a` is for; it is the same trait every other view sits on, so a consumer's
+/// `Option`-shaped container implements one iteration trait and gets both kinds of slot.
+pub trait OptView<'a, T: 'a>: Elements<'a, T> {
     fn is_some(&self) -> bool;
     fn get(&self) -> Option<&T>;
 
@@ -565,7 +572,7 @@ pub trait OptView<T> {
 /// An [`OptView`] that can also be written — what a `#[opt]` field's `&mut` side is handed. The same
 /// read/write line [`SeqView`] and [`SeqEdit`] are drawn on, so the shared side of a generated visitor
 /// never asks for the ability to empty a slot it only reads.
-pub trait OptEdit<T>: OptView<T> {
+pub trait OptEdit<'a, T: 'a>: OptView<'a, T> {
     /// Edit the node in place — no clone.
     fn get_mut(&mut self) -> Option<&mut T>;
     /// Fill or replace the node (works on an empty slot).
@@ -582,13 +589,13 @@ pub trait OptEdit<T>: OptView<T> {
 // [`walk::Walk`] instead. Such a slot can be neither emptied nor filled, so it is descent-only — never a
 // `#[seq]`/`#[opt]` edit target.
 
-impl<T> SeqView<T> for Vec<T> {
+impl<'a, T: 'a> SeqView<'a, T> for Vec<T> {
     fn len(&self) -> usize {
         <[T]>::len(self)
     }
 }
 
-impl<T> SeqEdit<T> for Vec<T> {
+impl<'a, T: 'a> SeqEdit<'a, T> for Vec<T> {
     // The provided `push`/`retain_mut` would go through `insert`/`remove` one element at a time;
     // `Vec`'s own are amortized O(1) and O(n). Generic code — which is what a visitor override is —
     // reaches these, never the inherent methods.
@@ -617,13 +624,13 @@ impl<'a, T: 'a> Elements<'a, T> for Vec<T> {
     }
 }
 
-impl<T> SeqView<T> for std::collections::VecDeque<T> {
+impl<'a, T: 'a> SeqView<'a, T> for std::collections::VecDeque<T> {
     fn len(&self) -> usize {
         std::collections::VecDeque::len(self)
     }
 }
 
-impl<T> SeqEdit<T> for std::collections::VecDeque<T> {
+impl<'a, T: 'a> SeqEdit<'a, T> for std::collections::VecDeque<T> {
     fn push(&mut self, value: T) {
         std::collections::VecDeque::push_back(self, value);
     }
@@ -640,13 +647,13 @@ impl<T> SeqEdit<T> for std::collections::VecDeque<T> {
 
 // Fixed-size, so `SeqView` and not `SeqEdit`: a slice or an array can be read, indexed and walked,
 // but has no `insert`/`remove` to offer. The shared side of a generated visitor takes them.
-impl<T> SeqView<T> for [T] {
+impl<'a, T: 'a> SeqView<'a, T> for [T] {
     fn len(&self) -> usize {
         <[T]>::len(self)
     }
 }
 
-impl<T, const N: usize> SeqView<T> for [T; N] {
+impl<'a, T: 'a, const N: usize> SeqView<'a, T> for [T; N] {
     fn len(&self) -> usize {
         N
     }
@@ -667,7 +674,7 @@ impl<'a, T: 'a> Elements<'a, T> for std::collections::VecDeque<T> {
     }
 }
 
-impl<T> OptView<T> for Option<T> {
+impl<'a, T: 'a> OptView<'a, T> for Option<T> {
     fn is_some(&self) -> bool {
         Option::is_some(self)
     }
@@ -676,7 +683,7 @@ impl<T> OptView<T> for Option<T> {
     }
 }
 
-impl<T> OptEdit<T> for Option<T> {
+impl<'a, T: 'a> OptEdit<'a, T> for Option<T> {
     fn get_mut(&mut self) -> Option<&mut T> {
         self.as_mut()
     }

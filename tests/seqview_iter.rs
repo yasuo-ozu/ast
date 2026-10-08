@@ -8,7 +8,7 @@
 //! single-slot wrapper (`Box<T>`) is a `Walk` (always one node), so a `Vec<Box<T>>` is
 //! `SeqView<Box<T>>` — the visitor descends the box as a further `Walk` level.
 
-use ast::{OptView, SeqView, View};
+use ast::{Elements, OptEdit, OptView, SeqEdit, SeqView};
 use std::collections::{BTreeMap, HashMap, LinkedList, VecDeque};
 
 // ---- `View`: every std shape that can hand out `&mut` to what it holds ----
@@ -16,39 +16,39 @@ use std::collections::{BTreeMap, HashMap, LinkedList, VecDeque};
 #[test]
 fn view_covers_the_growable_sequences() {
     let mut v = vec![1, 2, 3];
-    assert_eq!(v.view_iter().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
-    for x in v.view_iter_mut() {
+    assert_eq!(v.elements().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
+    for x in v.elements_mut() {
         *x *= 10;
     }
     assert_eq!(v, vec![10, 20, 30]);
 
     let mut d: VecDeque<i32> = vec![1, 2].into();
-    assert_eq!(d.view_iter().copied().collect::<Vec<_>>(), vec![1, 2]);
-    for x in d.view_iter_mut() {
+    assert_eq!(d.elements().copied().collect::<Vec<_>>(), vec![1, 2]);
+    for x in d.elements_mut() {
         *x += 1;
     }
-    assert_eq!(d.view_iter().copied().collect::<Vec<_>>(), vec![2, 3]);
+    assert_eq!(d.elements().copied().collect::<Vec<_>>(), vec![2, 3]);
 
     let mut l: LinkedList<i32> = [1, 2].into_iter().collect();
-    assert_eq!(l.view_iter().copied().collect::<Vec<_>>(), vec![1, 2]);
-    for x in l.view_iter_mut() {
+    assert_eq!(l.elements().copied().collect::<Vec<_>>(), vec![1, 2]);
+    for x in l.elements_mut() {
         *x += 1;
     }
-    assert_eq!(l.view_iter().copied().collect::<Vec<_>>(), vec![2, 3]);
+    assert_eq!(l.elements().copied().collect::<Vec<_>>(), vec![2, 3]);
 }
 
 #[test]
 fn view_covers_the_fixed_shapes() {
     // Neither can grow, so neither is a `SeqView` — but both iterate.
     let mut a = [1, 2, 3];
-    assert_eq!(a.view_iter().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
-    for x in a.view_iter_mut() {
+    assert_eq!(a.elements().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
+    for x in a.elements_mut() {
         *x *= 2;
     }
     assert_eq!(a, [2, 4, 6]);
 
     let s: &mut [i32] = &mut a;
-    for x in s.view_iter_mut() {
+    for x in s.elements_mut() {
         *x += 1;
     }
     assert_eq!(a, [3, 5, 7]);
@@ -58,11 +58,11 @@ fn view_covers_the_fixed_shapes() {
 fn view_covers_option_as_a_zero_or_one_slot() {
     let some: Option<i32> = Some(5);
     let none: Option<i32> = None;
-    assert_eq!(some.view_iter().count(), 1);
-    assert_eq!(none.view_iter().count(), 0);
+    assert_eq!(some.elements().count(), 1);
+    assert_eq!(none.elements().count(), 0);
 
     let mut o: Option<i32> = Some(1);
-    for x in o.view_iter_mut() {
+    for x in o.elements_mut() {
         *x += 100;
     }
     assert_eq!(o, Some(101));
@@ -72,14 +72,14 @@ fn view_covers_option_as_a_zero_or_one_slot() {
 fn view_covers_the_maps_by_value() {
     // The node sits in the VALUE slot, so that is what a map iterates. Keys are untouched.
     let mut b: BTreeMap<&str, i32> = [("a", 1), ("b", 2)].into_iter().collect();
-    assert_eq!(b.view_iter().copied().collect::<Vec<_>>(), vec![1, 2]);
-    for v in b.view_iter_mut() {
+    assert_eq!(b.elements().copied().collect::<Vec<_>>(), vec![1, 2]);
+    for v in b.elements_mut() {
         *v *= 10;
     }
     assert_eq!(b["a"], 10);
 
     let mut h: HashMap<&str, i32> = [("a", 1)].into_iter().collect();
-    for v in h.view_iter_mut() {
+    for v in h.elements_mut() {
         *v += 1;
     }
     assert_eq!(h["a"], 2);
@@ -87,8 +87,8 @@ fn view_covers_the_maps_by_value() {
 
 // A caller generic over the trait: the iterator comes back as an associated type, so this needs no
 // `Box` and no `dyn`.
-fn total<'a, V: View<'a, i32>>(c: &'a V) -> i32 {
-    c.view_iter().copied().sum()
+fn total<'a, V: Elements<'a, i32>>(c: &'a V) -> i32 {
+    c.elements().copied().sum()
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn a_generic_caller_names_the_iterator_as_an_associated_type() {
 #[test]
 fn retain_mut_visits_then_drops() {
     let mut v = vec![1, 2, 3, 4];
-    <Vec<i32> as SeqView<i32>>::retain_mut(&mut v, |x| {
+    <Vec<i32> as SeqEdit<i32>>::retain_mut(&mut v, |x| {
         *x += 1;
         *x % 2 == 0
     });
@@ -113,16 +113,16 @@ fn retain_mut_visits_then_drops() {
 #[test]
 fn structural_index_ops() {
     let mut v = vec![1, 3];
-    <Vec<i32> as SeqView<i32>>::insert(&mut v, 1, 2);
+    <Vec<i32> as SeqEdit<i32>>::insert(&mut v, 1, 2);
     assert_eq!(v, vec![1, 2, 3]);
-    assert_eq!(<Vec<i32> as SeqView<i32>>::remove(&mut v, 0), 1);
-    <Vec<i32> as SeqView<i32>>::push(&mut v, 9);
+    assert_eq!(<Vec<i32> as SeqEdit<i32>>::remove(&mut v, 0), 1);
+    <Vec<i32> as SeqEdit<i32>>::push(&mut v, 9);
     assert_eq!(v, vec![2, 3, 9]);
 }
 
 // The point of keeping the borrow off `SeqView`: a generic caller can read the slot, edit it, and
 // read it again, in one function, without the borrow checker objecting.
-fn edit_in_any_order<V: SeqView<i32>>(v: &mut V) {
+fn edit_in_any_order<V: SeqEdit<i32>>(v: &mut V) {
     v.push(4);
     for i in 0..v.len() {
         v[i] *= 2;
@@ -139,7 +139,7 @@ fn a_generic_caller_edits_and_reads_in_one_borrow() {
 
     let mut d: VecDeque<i32> = vec![1, 2, 3].into();
     edit_in_any_order(&mut d);
-    assert_eq!(d.view_iter().copied().collect::<Vec<_>>(), vec![0, 2, 6, 8]);
+    assert_eq!(d.elements().copied().collect::<Vec<_>>(), vec![0, 2, 6, 8]);
 }
 
 #[test]
@@ -147,13 +147,61 @@ fn vec_of_box_is_bare_element() {
     // Bare-element: `Vec<Box<T>>: SeqView<Box<T>>` yields `&mut Box<T>` (the element is the box). The
     // visitor descends the box as a further `Walk` level; here we edit through the box directly.
     let mut v: Vec<Box<i32>> = vec![Box::new(1), Box::new(2)];
-    for x in v.view_iter_mut() {
+    for x in v.elements_mut() {
         **x += 100;
     }
     assert_eq!(v.iter().map(|b| **b).collect::<Vec<_>>(), vec![101, 102]);
 }
 
-// ---- `OptView` ----
+#[test]
+fn seqview_covers_the_fixed_size_shapes() {
+    // `SeqView` without `SeqEdit`: readable, indexable, walkable — but it cannot grow.
+    fn sum<V: SeqView<i32> + ?Sized>(v: &V) -> i32 {
+        (0..v.len()).map(|i| v[i]).sum()
+    }
+    let a = [1, 2, 3];
+    assert_eq!(sum(&a), 6);
+    let s: &[i32] = &a;
+    assert_eq!(sum(s), 6);
+    assert_eq!(sum(&vec![1, 2, 3]), 6);
+
+    let mut a = [1, 2, 3];
+    a[0] = 10; // through `IndexMut`, the supertrait
+    assert_eq!(<[i32; 3] as SeqView<i32>>::len(&a), 3);
+}
+
+// The shape a generated `visit_<t>_seq`/`_seq_mut` has: the two traits together, over the lifetime
+// of the slot the method was handed. It is what makes the container's own iterator reachable from
+// inside a visitor override, and it works for a non-`'static` element — see `borrowed_elements`.
+#[test]
+fn the_two_traits_together_iterate_and_edit_a_view() {
+    fn sum<'a, V: SeqView<i32> + Elements<'a, i32> + ?Sized>(v: &'a V) -> i32 {
+        v.elements().sum()
+    }
+    fn bump_then_grow<V: SeqEdit<i32>>(v: &mut V) {
+        // `elements_mut` takes the whole `'a` borrow, so a body that also resizes indexes instead.
+        for i in 0..v.len() {
+            v[i] += 1;
+        }
+        v.push(0);
+    }
+
+    let mut v = vec![1, 2, 3];
+    assert_eq!(sum(&v), 6);
+    bump_then_grow(&mut v);
+    assert_eq!(v, vec![2, 3, 4, 0]);
+
+    let d: VecDeque<i32> = vec![1, 2].into();
+    assert_eq!(sum(&d), 3);
+    let a: &[i32] = &[4, 5];
+    assert_eq!(
+        sum(a),
+        9,
+        "and over a fixed-size slot, which is `SeqView` but not `SeqEdit`"
+    );
+}
+
+// ---- `OptView` / `OptEdit` ----
 
 #[test]
 fn optview_fills_and_empties_a_slot() {
@@ -192,5 +240,7 @@ fn push_and_retain_mut_prefer_inherent_over_seqview() {
     assert_eq!(<Vec<i32> as SeqView<i32>>::len(&v), 2); // trait still reachable via UFCS
                                                         // Both edit views are object-safe: nothing in them mentions a borrow or an associated type.
     let _seq: &dyn SeqView<i32> = &v;
+    let _edit: &dyn SeqEdit<i32> = &v;
     let _opt: &dyn OptView<i32> = &Some(1);
+    let _oedit: &dyn OptEdit<i32> = &Some(1);
 }

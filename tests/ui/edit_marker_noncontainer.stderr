@@ -13,6 +13,8 @@ error[E0277]: the trait bound `Box<Leaf<S>>: SeqView<Leaf<S>>` is not satisfied
    = help: the following other types implement trait `SeqView<T>`:
              Vec<T>
              VecDeque<T>
+             [T; N]
+             [T]
 note: required by a bound in `vis::Visit::visit_leaf_seq`
   --> tests/ui/edit_marker_noncontainer.rs:19:5
    |
@@ -20,11 +22,11 @@ note: required by a bound in `vis::Visit::visit_leaf_seq`
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Visit::visit_leaf_seq`
    = note: this error originates in the macro `crate::Wrap` which comes from the expansion of the macro `ast::visitor` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `Box<Leaf<S>>: SeqView<Leaf<S>>` is not satisfied
+error[E0277]: the trait bound `Box<Leaf<S>>: Elements<'_, Leaf<S>>` is not satisfied
   --> tests/ui/edit_marker_noncontainer.rs:15:9
    |
 15 |     pub inner: Box<Leaf<S>>,
-   |         ^^^^^ the trait `SeqView<Leaf<S>>` is not implemented for `Box<Leaf<S>>`
+   |         ^^^^^ the trait `Elements<'_, Leaf<S>>` is not implemented for `Box<Leaf<S>>`
 ...
 19 |     ast::visitor!(crate::Wrap, crate::Leaf);
    |     ---------------------------------------
@@ -32,9 +34,65 @@ error[E0277]: the trait bound `Box<Leaf<S>>: SeqView<Leaf<S>>` is not satisfied
    |     required by a bound introduced by this call
    |     in this macro invocation
    |
-   = help: the following other types implement trait `SeqView<T>`:
+   = help: the following other types implement trait `Elements<'a, T>`:
+             `BTreeMap<K, V>` implements `Elements<'a, V>`
+             `HashMap<K, V, S>` implements `Elements<'a, V>`
+             `LinkedList<T>` implements `Elements<'a, T>`
+             `Option<T>` implements `Elements<'a, T>`
+             `Vec<T>` implements `Elements<'a, T>`
+             `VecDeque<T>` implements `Elements<'a, T>`
+             `[T; N]` implements `Elements<'a, T>`
+             `[T]` implements `Elements<'a, T>`
+note: required by a bound in `vis::Visit::visit_leaf_seq`
+  --> tests/ui/edit_marker_noncontainer.rs:19:5
+   |
+19 |     ast::visitor!(crate::Wrap, crate::Leaf);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Visit::visit_leaf_seq`
+   = note: this error originates in the macro `crate::Wrap` which comes from the expansion of the macro `ast::visitor` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Box<Leaf<S>>: SeqEdit<Leaf<S>>` is not satisfied
+  --> tests/ui/edit_marker_noncontainer.rs:15:9
+   |
+15 |     pub inner: Box<Leaf<S>>,
+   |         ^^^^^ the trait `SeqEdit<Leaf<S>>` is not implemented for `Box<Leaf<S>>`
+...
+19 |     ast::visitor!(crate::Wrap, crate::Leaf);
+   |     ---------------------------------------
+   |     |
+   |     required by a bound introduced by this call
+   |     in this macro invocation
+   |
+   = help: the following other types implement trait `SeqEdit<T>`:
              Vec<T>
              VecDeque<T>
+note: required by a bound in `vis::VisitMut::visit_leaf_seq_mut`
+  --> tests/ui/edit_marker_noncontainer.rs:19:5
+   |
+19 |     ast::visitor!(crate::Wrap, crate::Leaf);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `VisitMut::visit_leaf_seq_mut`
+   = note: this error originates in the macro `crate::Wrap` which comes from the expansion of the macro `ast::visitor` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Box<Leaf<S>>: Elements<'_, Leaf<S>>` is not satisfied
+  --> tests/ui/edit_marker_noncontainer.rs:15:9
+   |
+15 |     pub inner: Box<Leaf<S>>,
+   |         ^^^^^ the trait `Elements<'_, Leaf<S>>` is not implemented for `Box<Leaf<S>>`
+...
+19 |     ast::visitor!(crate::Wrap, crate::Leaf);
+   |     ---------------------------------------
+   |     |
+   |     required by a bound introduced by this call
+   |     in this macro invocation
+   |
+   = help: the following other types implement trait `Elements<'a, T>`:
+             `BTreeMap<K, V>` implements `Elements<'a, V>`
+             `HashMap<K, V, S>` implements `Elements<'a, V>`
+             `LinkedList<T>` implements `Elements<'a, T>`
+             `Option<T>` implements `Elements<'a, T>`
+             `Vec<T>` implements `Elements<'a, T>`
+             `VecDeque<T>` implements `Elements<'a, T>`
+             `[T; N]` implements `Elements<'a, T>`
+             `[T]` implements `Elements<'a, T>`
 note: required by a bound in `vis::VisitMut::visit_leaf_seq_mut`
   --> tests/ui/edit_marker_noncontainer.rs:19:5
    |

@@ -193,11 +193,16 @@ impl Container {
         }
     }
 
-    /// The view trait a field of this shape is dispatched through.
-    pub(crate) fn view_trait(self) -> TokenStream {
-        match self {
-            Container::Seq => quote!(__ast_rt::SeqView),
-            Container::Opt => quote!(__ast_rt::OptView),
+    /// The view trait a field of this shape is dispatched through. Both shapes differ by mutability:
+    /// reading a slot asks for `SeqView`/`OptView` (so a fixed-size shape qualifies for the seq one),
+    /// while editing asks for `SeqEdit`/`OptEdit`, which is where `push`/`remove`/`retain_mut` and
+    /// `set`/`take` live.
+    pub(crate) fn view_trait(self, mutable: bool) -> TokenStream {
+        match (self, mutable) {
+            (Container::Seq, false) => quote!(__ast_rt::SeqView),
+            (Container::Seq, true) => quote!(__ast_rt::SeqEdit),
+            (Container::Opt, false) => quote!(__ast_rt::OptView),
+            (Container::Opt, true) => quote!(__ast_rt::OptEdit),
         }
     }
 }

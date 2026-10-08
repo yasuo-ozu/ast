@@ -6,7 +6,7 @@
 //! on the `&mut` side to change the collection.
 #![allow(dead_code)]
 
-use ast::{Ast, OptView, SeqView};
+use ast::{Ast, Elements, OptEdit, OptView, SeqEdit, SeqView};
 
 #[derive(Ast, Debug, PartialEq)]
 pub enum Leaf {
@@ -41,13 +41,22 @@ struct Observe {
     opt_present: bool,
 }
 impl visit::Visit for Observe {
-    fn visit_leaf_seq<V: SeqView<Leaf>>(&mut self, v: &V) {
+    fn visit_leaf_seq<'a, V: SeqView<Leaf> + Elements<'a, Leaf>>(&mut self, v: &'a V) {
         self.len = v.len();
         for i in 0..v.len() {
             if matches!(&v[i], Leaf::N(n) if n % 2 == 1) {
                 self.indices.push(i);
             }
         }
+        // the same walk through the container's own iterator, which the `Elements` half of the
+        // bound makes reachable from inside the override.
+        let odd: Vec<usize> = v
+            .elements()
+            .enumerate()
+            .filter(|(_, e)| matches!(e, Leaf::N(n) if n % 2 == 1))
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(odd, self.indices);
     }
     fn visit_leaf_opt<V: OptView<Leaf>>(&mut self, v: &V) {
         self.opt_present = v.is_some();
@@ -83,11 +92,11 @@ fn the_opt_view_reports_presence() {
 struct Edit;
 impl visit::Visit for Edit {}
 impl visit::VisitMut for Edit {
-    fn visit_leaf_seq_mut<V: SeqView<Leaf>>(&mut self, v: &mut V) {
+    fn visit_leaf_seq_mut<'a, V: SeqEdit<Leaf> + Elements<'a, Leaf>>(&mut self, v: &'a mut V) {
         v.retain_mut(|e| !matches!(e, Leaf::N(2)));
         v.insert(0, Leaf::N(0));
     }
-    fn visit_leaf_opt_mut<V: OptView<Leaf>>(&mut self, v: &mut V) {
+    fn visit_leaf_opt_mut<V: OptEdit<Leaf>>(&mut self, v: &mut V) {
         v.take();
     }
 }
@@ -116,4 +125,76 @@ fn a_marked_field_is_still_walked_element_by_element() {
     let mut c = CountLeaves::default();
     holder().visit(&mut c);
     assert_eq!(c.0, 4, "three in the Vec, one in the Option");
+}
+
+// ---- a node that is not `'static` ----
+//
+// The seq view's bound is `SeqView<T> + Elements<'vw, T>`, and `Elements<'vw, T>` declares `T: 'vw`.
+// That predicate is not inferred, so the generated method carries it as a `where`-clause; without it
+// the whole trait fails to compile the moment a visited type holds a borrow. This module is what
+// pins that: `Borrowed<'s>` outlives nothing in particular, and both sides still iterate it.
+mod borrowed_elements {
+    use super::*;
+
+    #[derive(Ast, Debug, PartialEq)]
+    pub struct Borrowed<'s>(pub &'s str);
+
+    #[derive(Ast, Debug)]
+    #[subast(crate::borrowed_elements::Borrowed)]
+    pub struct Doc<'s> {
+        #[seq]
+        pub words: Vec<Borrowed<'s>>,
+    }
+
+    pub mod v {
+        ast::visitor!(
+            crate::borrowed_elements::Borrowed,
+            crate::borrowed_elements::Doc
+        );
+    }
+
+    #[derive(Default)]
+    struct Collect(Vec<String>);
+    impl<'s> v::Visit<'s> for Collect {
+        fn visit_borrowed_seq<'a, V: SeqView<Borrowed<'s>> + Elements<'a, Borrowed<'s>>>(
+            &mut self,
+            v: &'a V,
+        ) where
+            Borrowed<'s>: 'a,
+        {
+            self.0 = v.elements().map(|b| b.0.to_string()).collect();
+        }
+    }
+    impl<'s> v::VisitMut<'s> for Collect {}
+
+    struct Upper;
+    impl<'s> v::Visit<'s> for Upper {}
+    impl<'s> v::VisitMut<'s> for Upper {
+        fn visit_borrowed_seq_mut<'a, V: SeqEdit<Borrowed<'s>> + Elements<'a, Borrowed<'s>>>(
+            &mut self,
+            v: &'a mut V,
+        ) where
+            Borrowed<'s>: 'a,
+        {
+            for b in v.elements_mut() {
+                b.0 = "x";
+            }
+        }
+    }
+
+    #[test]
+    fn a_borrowed_element_iterates_on_both_sides() {
+        // owned here, so the element type is genuinely not `'static`.
+        let owned = String::from("hello");
+        let mut d = Doc {
+            words: vec![Borrowed(&owned), Borrowed("world")],
+        };
+
+        let mut c = Collect::default();
+        d.visit(&mut c);
+        assert_eq!(c.0, vec!["hello".to_string(), "world".to_string()]);
+
+        d.visit_mut(&mut Upper);
+        assert_eq!(d.words, vec![Borrowed("x"), Borrowed("x")]);
+    }
 }

@@ -12,136 +12,32 @@
 Walk a syntax tree you derived.
 
 Put `#[derive(Ast)]` on your nodes, list them in `visitor!`, and you get a visitor over them: one
-`visit_*` method per type, each with a body that already descends.
-
-```rust
-use ast::Ast;
-
-#[derive(Ast)]
-pub enum Expr {
-    Lit(u32),
-    Neg(Box<Expr>),
-    Many(#[seq] Vec<Expr>),
-}
-
-pub mod visit {
-    ast::visitor!(crate::Expr);
-}
-
-fn main() {
-    let e = Expr::Many(vec![Expr::Lit(1), Expr::Neg(Box::new(Expr::Lit(2)))]);
-
-    // A closure is the short way in. It runs for every node of the type its argument names.
-    let mut n = 0;
-    e.visit(|_: &Expr| n += 1);
-    assert_eq!(n, 4);
-}
-```
-
-## Keeping state
-
-A struct lets you carry something along. Override the methods you care about and call the free
-function to keep descending — or don't, to prune.
-
-```rust
-use ast::Ast;
-
-#[derive(Ast)]
-pub enum Expr {
-    Lit(u32),
-    Neg(Box<Expr>),
-}
-
-pub mod visit {
-    ast::visitor!(crate::Expr);
-}
-
-#[derive(Default)]
-struct Depth {
-    max: usize,
-    at: usize,
-}
-
-impl visit::Visit for Depth {
-    fn visit_expr(&mut self, i: &Expr) {
-        self.at += 1;
-        self.max = self.max.max(self.at);
-        visit::visit_expr(self, i);
-        self.at -= 1;
-    }
-}
-impl visit::VisitMut for Depth {}
-
-fn main() {
-    let mut d = Depth::default();
-    Expr::Neg(Box::new(Expr::Lit(1))).visit(&mut d);
-    assert_eq!(d.max, 2);
-}
-```
-
-`visit_mut` is the same with `&mut`. A tuple of two to eight *closures* runs them all in a single
-walk; a visitor cannot join that tuple, because folding into one hook is what makes the single walk
-possible. Two visitors are two walks, written as two calls.
-
-## Editing a list
-
-A `#[seq]` field hands you the slot instead of one element, so you can see an element's index and
-its neighbours — and, on the `mut` side, change the list.
+`visit_*` method per type, each with a body that already descends. One example carries the whole
+API — a closure, a visitor with state, editing a list, and extending a visitor:
 
 ```rust
 use ast::{Ast, SeqEdit};
 
+// ── the nodes ───────────────────────────────────────────────────────────────────────────────────
 #[derive(Ast)]
 pub enum Expr {
     Lit(u32),
+    Neg(Box<Expr>),
+    // `#[seq]` asks for the whole slot, not one element.
     Many(#[seq] Vec<Expr>),
 }
 
-pub mod visit {
-    ast::visitor!(crate::Expr);
-}
-
-struct DropLits;
-impl visit::Visit for DropLits {}
-impl visit::VisitMut for DropLits {
-    fn visit_expr_seq_mut<'a, V: SeqEdit<'a, Expr>>(&mut self, v: &'a mut V) {
-        v.retain_mut(|e| !matches!(e, Expr::Lit(_)));
-    }
-}
-
-fn main() {
-    let mut e = Expr::Many(vec![Expr::Lit(1), Expr::Many(vec![])]);
-    e.visit_mut(&mut DropLits);
-    assert!(matches!(&e, Expr::Many(v) if v.len() == 1));
-}
-```
-
-`#[opt]` does the same for an `Option<T>` slot.
-
-## Reaching further
-
-A field is followed when the visitor knows its type. For a type it does not list — one the walk only
-passes *through* — add `#[subast(crate::path::To)]` to the node. `#[skip]` takes a field out of the
-walk entirely.
-
-## Extending a visitor
-
-List a type in one `visitor!` only. To cover more, extend the visitor you have.
-
-```rust
-use ast::Ast;
-
-#[derive(Ast)]
-pub enum Expr {
-    Lit(u32),
-}
-
+// `#[subast]` names a type this visitor should follow but does not list; `#[skip]` takes a field
+// out of the walk entirely.
 #[derive(Ast)]
 #[subast(crate::Expr)]
 pub struct Stmt {
     pub e: Expr,
 }
 
+// ── the visitors ────────────────────────────────────────────────────────────────────────────────
+// List a type in one `visitor!` only. To cover more, extend the visitor you have: `base::Visit`
+// becomes a supertrait of `ext::Visit`, so a pass written against the base still runs here.
 pub mod base {
     ast::visitor!(crate::Expr);
 }
@@ -149,19 +45,67 @@ pub mod ext {
     ast::visitor!(crate::base => crate::Stmt);
 }
 
-fn main() {
-    let s = Stmt { e: Expr::Lit(1) };
+// ── a visitor carrying state ────────────────────────────────────────────────────────────────────
+// Override the methods you care about, and call the free function to keep descending — or leave it
+// out to prune.
+#[derive(Default)]
+struct Depth {
+    max: usize,
+    at: usize,
+}
 
-    // A closure reaches an inherited type as readily as one of this visitor's own.
+impl base::Visit for Depth {
+    fn visit_expr(&mut self, i: &Expr) {
+        self.at += 1;
+        self.max = self.max.max(self.at);
+        base::visit_expr(self, i);
+        self.at -= 1;
+    }
+}
+impl base::VisitMut for Depth {}
+
+// ── a visitor editing a list ────────────────────────────────────────────────────────────────────
+// A `#[seq]` field adds `visit_expr_seq`/`visit_expr_seq_mut`. They hand over the slot, so you can
+// see an element's index and its neighbours — and, on the `mut` side, change the list.
+struct DropLits;
+impl base::Visit for DropLits {}
+impl base::VisitMut for DropLits {
+    fn visit_expr_seq_mut<'a, V: SeqEdit<'a, Expr>>(&mut self, v: &'a mut V) {
+        v.retain_mut(|e| !matches!(e, Expr::Lit(_)));
+    }
+}
+
+fn main() {
+    let e = Expr::Many(vec![Expr::Lit(1), Expr::Neg(Box::new(Expr::Lit(2)))]);
+
+    // A closure is the short way in: it runs for every node of the type its argument names.
     let mut n = 0;
-    s.visit(|_: &Expr| n += 1);
-    assert_eq!(n, 1);
+    e.visit(|_: &Expr| n += 1);
+    assert_eq!(n, 4);
+
+    // A struct carries something along.
+    let mut d = Depth::default();
+    e.visit(&mut d);
+    assert_eq!(d.max, 3);
+
+    // `visit_mut` is the same with `&mut`, and the view edits the parent in place.
+    let mut m = Expr::Many(vec![Expr::Lit(1), Expr::Many(vec![])]);
+    m.visit_mut(&mut DropLits);
+    assert!(matches!(&m, Expr::Many(v) if v.len() == 1));
+
+    // The extended visitor reaches an inherited type as readily as one of its own.
+    let s = Stmt { e: Expr::Lit(1) };
+    let mut k = 0;
+    s.visit(|_: &Expr| k += 1);
+    assert_eq!(k, 1);
 }
 ```
 
-`base::Visit` becomes a supertrait of `ext::Visit`, so a pass written against the base still runs in
-the extended walk. A visitor implements every trait in the chain; the ancestors it does not touch
-take an empty impl.
+`#[opt]` does for an `Option<T>` slot what `#[seq]` does for a list. A tuple of two to eight
+*closures* runs them all in a single walk; a visitor cannot join that tuple, because folding into
+one hook is what makes the single walk possible, so two visitors are two walks and two calls. A
+visitor implements every trait in its chain — the ancestors it does not touch take an empty impl,
+as `impl base::VisitMut for Depth {}` does above.
 
 ## Using it through another crate
 

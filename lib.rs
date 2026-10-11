@@ -7,17 +7,17 @@
 //!
 //! # What lives here
 //!
-//! The generated visitor modules and the `#[derive(Ast)]` metadata macros live in *your* crate;
-//! this one holds what they rely on:
+//! `#[derive(Ast)]` and `visitor!` write their code into *your* crate. This crate holds the pieces
+//! that code calls into. You rarely name them yourself:
 //!
-//! * [`Ast`] — an empty marker trait implemented by `#[derive(Ast)]` for every AST node type.
-//! * [`Repeater`] — the `type-leak` indirection trait. `#[derive(Ast)]` emits one
-//!   `impl Repeater<N> for <the AST type>` per field type that depends on the definition's type
-//!   context, so a consumer can name those types portably as `<T as ::ast::Repeater<N>>::Type`
-//!   regardless of which crate or module it expands in.
-//! * [`walk::Walk`]/[`walk::WalkMut`], the [`SeqView`]/[`SeqEdit`]/[`OptView`]/[`OptEdit`] slot views
-//!   and [`Elements`], which the
-//!   generated descent bottoms out in.
+//! * [`Ast`] — a marker trait, with no methods. `#[derive(Ast)]` implements it, and that is how
+//!   generic code says "is an AST node".
+//! * [`SeqView`]/[`SeqEdit`] and [`OptView`]/[`OptEdit`] — the slot views a `#[seq]`/`#[opt]`
+//!   method is handed, plus [`Elements`] for iterating one. You *do* name these, in an override.
+//! * [`walk::Walk`]/[`walk::WalkMut`] — how a node offers its children to the visitor. Implement
+//!   one of these to make a container of your own walkable.
+//! * [`Repeater`] — plumbing. It lets the generated code name a field's type from a different
+//!   module or crate than the one the node was defined in.
 
 #[doc(hidden)]
 pub mod _imp {
@@ -85,8 +85,9 @@ pub mod visit {
 /// ```ignore
 /// #[derive(Ast)]
 /// pub enum Expr<S> {
-///     // `&mut Box<Stmt<'_, S>>` is invariant, so a mut walk can never descend into a concrete
-///     // lifetime fill — say so here rather than leaving it to an error inside the macro.
+///     // A `&mut` walk cannot descend into this field: `&mut Box<Stmt<'static, S>>` is
+///     // invariant in the lifetime, so there is no way in. Saying so here gives a clear error
+///     // instead of one from inside the macro.
 ///     Stmt(#[skip] Box<Stmt<'static, S>>),
 ///     Lit(PhantomData<S>),
 /// }
@@ -118,7 +119,7 @@ pub use ast_macro::Ast;
 /// pub mod visit { ast::visitor!(crate::Doc, crate::Item); }
 /// ```
 ///
-/// The module is about a thousand lines. In outline it is this:
+/// The module is about a thousand lines. In outline:
 ///
 /// ```ignore
 /// // One method per listed type, each defaulted to the walk below. Implement it to act.
@@ -126,8 +127,7 @@ pub use ast_macro::Ast;
 ///     fn visit_doc(&mut self, i: &Doc) { visit_doc(self, i) }
 ///     fn visit_item(&mut self, i: &Item) { visit_item(self, i) }
 ///
-///     // Only because a field is marked `#[seq]`. It takes the list, not an element — and
-///     // `Elements` is in the bound, so the container's own iterator is reachable here.
+///     // Only because a field is marked `#[seq]`. It takes the list, not an element.
 ///     fn visit_item_seq<'a, V: SeqView<'a, Item>>(&mut self, v: &'a V) where Item: 'a {
 ///         for e in v.elements() { self.visit_item(e); }
 ///     }
@@ -156,22 +156,13 @@ pub use ast_macro::Ast;
 ///     pub fn visit_mut<T>(&mut self, visitor: impl IntoVisitorMut<T>) -> &mut Self { .. }
 /// }
 ///
-/// impl Item {
-///     pub fn visit<T>(&self, visitor: impl IntoVisitor<T>) -> &Self { .. }
-///     pub fn visit_mut<T>(&mut self, visitor: impl IntoVisitorMut<T>) -> &mut Self { .. }
-/// }
-///
-/// // ...and all of the above again for editing: `VisitMut`, `visit_doc_mut`,
-/// // `visit_item_seq_mut`, `IntoVisitorMut`, each `&` become `&mut`. That is how a view edits
-/// // the list instead of only reading it.
+/// // ...the same inherent pair on every listed type, and all of the above again for editing:
+/// // `VisitMut`, `visit_doc_mut`, `visit_item_seq_mut`, `IntoVisitorMut`, each `&` become `&mut`.
 /// ```
 ///
-/// So `doc.visit(..)` needs nothing in scope. Implementing `Visit` does, and so does calling
-/// `into_visitor`.
-///
-/// That is the whole public surface. The impls behind it — a visitor by `&mut` or in a `Box`, the
-/// adapters that make a closure one, the machinery an extending visitor needs — are hidden, named
-/// with an `__ast` prefix, and kept where `use path::to::visit::*;` does not reach them.
+/// So `doc.visit(..)` needs nothing in scope; implementing `Visit` does. Everything else — a visitor
+/// by `&mut` or in a `Box`, the adapters that make a closure one, the machinery an extending visitor
+/// needs — is hidden behind an `__ast` prefix and out of reach of a glob import.
 ///
 /// # Using it
 ///
@@ -228,33 +219,22 @@ pub use ast_macro::Ast;
 /// `visit_<node>_seq` and `visit_<node>_opt`, plus their `_mut` halves. They are handed the whole
 /// slot rather than one element, and like the others they come with a body that just walks on.
 ///
-/// Reading, you get a `&impl SeqView<'a, T>` or `&impl OptView<'a, T>`; editing, a
-/// `&mut impl SeqEdit<'a, T>` or `&mut impl OptEdit<'a, T>`. That shows you what `visit_<node>`
-/// cannot: how many elements there are, which index one has, what sits next to it. Editing, you
-/// get a `&mut`, so you can `push`, `remove` or `retain_mut` — see the example above.
-///
-/// Every view carries a lifetime — it is the lifetime of the slot, which arrives as `&'a V`:
+/// The view shows you what `visit_<node>` cannot: how many elements there are, which index one has,
+/// what sits next to it. The `&mut` side can `push`, `remove` or `retain_mut` — see the example
+/// above. Each method takes the lifetime of the slot it is handed:
 ///
 /// ```ignore
 /// fn visit_item_seq<'a, V: SeqView<'a, Item>>(&mut self, v: &'a V) where Item: 'a;
+/// fn visit_item_seq_mut<'a, V: SeqEdit<'a, Item>>(&mut self, v: &'a mut V) where Item: 'a;
 /// ```
 ///
-/// One bound, because [`Elements`] is a **supertrait** of all four views. So every way of reaching
-/// the elements is open inside an override without naming a second trait: indexing — `&v[i]` through
-/// [`SeqView`]'s `Index` supertrait, `&mut v[i]` through [`SeqEdit`]'s `IndexMut` — and iteration
-/// through [`Elements::elements`] / [`Elements::elements_mut`], which hand back the container's
-/// **own** iterator. `self` is
-/// borrowed separately from the slot, so an override may iterate and call back into the visitor in
-/// the same body. An opt view reaches its ≤1 node by [`OptView::get`]; it carries the lifetime too,
-/// for the supertrait's sake.
+/// One bound reaches everything: index with `&v[i]` or `&mut v[i]`, iterate with
+/// [`elements`](Elements::elements) or [`elements_mut`](Elements::elements_mut). `self` is borrowed
+/// separately from the slot, so an override may iterate and call back into the visitor in one body.
+/// An opt view reaches its ≤1 node by [`OptView::get`].
 ///
-/// `elements_mut` takes the view's whole `'a` borrow, so it is one pass and the slot is spent after
-/// it; an override that wants to walk the elements *and* resize indexes instead (`&mut v[i]`, then
-/// `push`/`retain_mut`), which is what the positional half is for.
-///
-/// When the visited node is itself generic, an override has to **repeat** the `where` clause — rustc
-/// checks the impl method's signature for well-formedness on its own and does not carry the trait's
-/// predicate over:
+/// If the visited node is itself generic, **repeat the `where` clause** — rustc will not carry the
+/// trait's predicate over to your impl:
 ///
 /// ```ignore
 /// fn visit_stmt_seq_mut<'a, V: SeqEdit<'a, Stmt<S>>>(&mut self, v: &'a mut V)
@@ -262,11 +242,7 @@ pub use ast_macro::Ast;
 /// { .. }                                      // `S` may not live long enough
 /// ```
 ///
-/// A node with no parameters (`Stmt`, not `Stmt<S>`) is `'static`, the predicate is trivially true,
-/// and the clause may be left off.
-///
-/// Resizing is [`SeqEdit`] and filling or emptying is [`OptEdit`], neither of which the shared side
-/// asks for — so a fixed-size slot still has a readable view.
+/// A node with no parameters is `'static`, so the clause may be left off.
 ///
 /// The marker only chooses which method is called. A `Vec<T>` and an `Option<T>` are walked by the
 /// same generated code either way, and no container type is ever named.
@@ -289,9 +265,8 @@ pub use ast_macro::Ast;
 /// node.visit((|e: &Expr| .., |t: &Type| ..));     // two closures, one walk
 /// ```
 ///
-/// A tuple is closures and nothing else. Folding them into one hook is what buys the single walk,
-/// and a visitor cannot join that fold because it descends on its own. Two visitors are two walks,
-/// written as two calls:
+/// A tuple is closures and nothing else: folding them into one hook is what buys the single walk,
+/// and a visitor descends on its own, so it cannot join. Two visitors are two walks:
 ///
 /// ```ignore
 /// node.visit(&mut first);
@@ -349,10 +324,13 @@ pub use ast_macro::Ast;
 /// stmt.visit(&mut counter);   // walks Stmt, then Expr, then Type
 /// ```
 ///
-/// A field holding one of the base's types needs no `#[subast(..)]` entry: `ext` asks the base for
-/// its list, and those nodes go to the base's `visit_*` through the supertrait. Chains can be as
-/// long as you like — `base => mid => new` works, and the new visitor may take more generic
-/// parameters than its base. Several bases at once work too: `visitor!(a, b => Stmt)`.
+/// A few things follow from that:
+///
+/// * A field holding one of the base's types needs no `#[subast(..)]` entry. `ext` asks the base
+///   for its list, and those nodes reach the base's `visit_*` through the supertrait.
+/// * Chains can be as long as you like: `base => mid => new`.
+/// * The new visitor may take more generic parameters than its base.
+/// * Several bases at once work: `visitor!(a, b => Stmt)`.
 ///
 /// A closure reaches an inherited type as readily as one of your own, so the short spelling keeps
 /// working however deep the chain is:
@@ -365,10 +343,15 @@ pub use ast_macro::Ast;
 /// method lives in the base. Mark that field in the base's own `visitor!` instead, or drop the
 /// marker and let the walk take the elements one at a time.
 ///
-/// A visitor has to implement every trait in the chain, including the ancestors whose nodes it
-/// does not touch. Those impls are empty — every method already walks — but Rust has no way to ask
-/// for them, so a pass that overrides one node of `top` still writes `impl base::Visit for P {}`
-/// and its `VisitMut` twin for each ancestor.
+/// You have to implement **every** trait in the chain, even the ancestors whose nodes you never
+/// touch. Those impls are empty, since every method already walks on its own:
+///
+/// ```ignore
+/// impl base::Visit for P {}       // nothing to say, but still required
+/// impl base::VisitMut for P {}
+/// impl ext::Visit for P { /* the one method you care about */ }
+/// impl ext::VisitMut for P {}
+/// ```
 ///
 /// ## Naming an ancestor you cannot reach
 ///
@@ -417,13 +400,16 @@ macro_rules! visitor {
 )]
 pub trait Ast {}
 
-/// `type-leak` repeater: passes a single type out of the leaker's type context to a referrer.
+/// Plumbing, so generated code can name a type it cannot write a path to.
 ///
-/// `INDEX` distinguishes the type references collected from one definition (in declaration order,
-/// matching `type_leak::Referrer::iter`). The `#[derive(Ast)]` macro implements this directly on
-/// the AST type; a consumer refers back through it.
+/// A node's field type may only be nameable where the node was defined — behind a private module,
+/// or through an alias. `#[derive(Ast)]` records each such type as an impl of this trait on the
+/// node, numbered in declaration order, and the generated visitor writes
+/// `<Node as Repeater<0>>::Type` instead of a path. You should not need to write this yourself.
+///
+/// Built on the `type-leak` crate; `INDEX` matches `type_leak::Referrer::iter` order.
 pub trait Repeater<const INDEX: usize> {
-    /// The leaked type, valid in the referrer's context via `<T as Repeater<INDEX>>::Type`.
+    /// The recorded type, nameable from anywhere as `<Node as Repeater<INDEX>>::Type`.
     type Type: ?Sized;
 }
 
@@ -434,50 +420,27 @@ pub trait Repeater<const INDEX: usize> {
 // cloning of existing nodes). The view is a trait implemented directly on the container types — so the
 // descent passes `&mut self.field` with no wrapper.
 //
-// [`Elements`] is the root: iteration both ways, with the borrow as a trait parameter so each
-// container names its own iterator types. On top of it sit the four slot views — [`SeqView`]
-// (Vec-like, positional) / [`SeqEdit`], and [`OptView`] (Option-like, ≤1) / [`OptEdit`] — so one
+// [`Elements`] is the root — iteration, both ways. On top of it sit the four views: [`SeqView`]
+// (Vec-like, positional) and [`SeqEdit`], [`OptView`] (Option-like, ≤1) and [`OptEdit`]. So one
 // bound on a generated method reaches reading, iterating and editing at once.
 //
-// The read/write line is drawn once, at the view level, and not again underneath: every container
-// that iterates at all iterates both ways (`iter_mut` is what a `#[seq]`/`#[opt]` descent needs), so
-// a separate `&mut` iteration trait would have had no implementor of its own. What a fixed-size
-// shape lacks is `insert`/`remove`, which is exactly what [`SeqEdit`] adds.
+// These are **edit** views only; the descent itself goes through [`walk::Walk`]. They are
+// bare-element — a `#[seq]`/`#[opt]` field must be a bare `Vec<T>`/`Option<T>`, never a wrapped one.
 //
-// The views' own methods are positional and carry no borrow, so a view stays usable across a `push`,
-// a `remove` and a walk, in any order; it is `elements_mut` alone that takes the whole `'a`.
-//
-// These are **edit** views only: the descent itself goes through [`walk::Walk`]. The element type is a
-// **type parameter** (`SeqView<'a, T>`, not an associated type), and the traits are bare-element — a
-// `#[seq]`/`#[opt]` field must be a bare `Vec<T>`/`Option<T>`, never a wrapped one.
-//
-// The lifetime costs object safety: `dyn SeqView<'_, T>` has to pin `Elements::Iter`, which is the
-// container's own iterator — so the erased type reappears in the annotation. Nothing here needs a
-// `dyn` view (a generated method takes its view as a generic parameter), and `tests/seqview_iter.rs`
-// pins what is still possible.
-//
-// The type parameter is also what keeps these implementable downstream. A consumer whose nodes are
-// local may put any of these on a container it does not own —
-// `impl<'a> Elements<'a, MyNode> for BTreeSet<MyNode>` is accepted, because the local `MyNode`
-// appears in the trait reference. With the element as an *associated* type the trait reference would
-// be `Elements for BTreeSet<MyNode>`, naming nothing local, and the orphan rule would refuse it.
+// The element is a type parameter rather than an associated type, which is what lets a consumer
+// implement these for a container it does not own: `Elements<'a, MyNode> for BTreeSet<MyNode>` names
+// a local type and so clears the orphan rule.
 
-/// Iteration over whatever a container holds, by shared reference: the elements of a sequence, the
-/// ≤1 node of an `Option`, the **values** of a map. One trait for every shape, because iteration is
-/// the one thing they all agree on — a map has no positional edit, and a sequence has no key.
+/// Iterate whatever a container holds: the elements of a sequence, the ≤1 node of an `Option`, the
+/// **values** of a map. One trait for every shape — a map has no index, a sequence has no key, but
+/// both iterate.
 ///
-/// The borrow is a parameter of the **trait** rather than of the method, so the iterator can be named
-/// as an associated type: a `Vec` hands back the slice iterator, a map its own `Values`, an
-/// association list a `Map<slice::Iter<..>, fn(..) -> ..>`. No `dyn`, no allocation, and no `unsafe` —
-/// an iterator synthesized here out of repeated indexing would have to widen each element borrow to
-/// the whole walk, which is sound only if every impl yields a distinct element per index, and a safe
-/// trait cannot promise that. A GAT would put the lifetime back on the method, and costs 1.65.
+/// The borrow is on the trait, not the method, so each container names its own iterator as an
+/// associated type: a `Vec` hands back the slice iterator, a map its `Values`. No `dyn`, no
+/// allocation, no `unsafe`.
 ///
-/// This is the root of all four slot views: every one of them has it as a supertrait, so anything a
-/// generated visitor hands you can be iterated — and `elements_mut` is reachable from the `&mut`
-/// side of any of them. The read/write line lives one level up, at [`SeqView`]/[`SeqEdit`] and
-/// [`OptView`]/[`OptEdit`], where it is about *resizing*; a container that iterates at all iterates
-/// both ways, so splitting this trait too would have drawn a line with nothing on one side of it.
+/// Every slot view has this as a supertrait, so anything a generated visitor hands you can be
+/// iterated.
 pub trait Elements<'a, T: 'a> {
     /// The container's own by-reference iterator.
     type Iter: Iterator<Item = &'a T>;
@@ -491,23 +454,13 @@ pub trait Elements<'a, T: 'a> {
     fn elements_mut(&'a mut self) -> Self::IterMut;
 }
 
-/// A readable, **sequence-like** view of an AST collection field (`Vec`, `VecDeque`, a slice, an
-/// array, or a container of your own — implement it and `#[seq]` accepts that container, since no
-/// container name is ever matched). Bare-element: the element type is `T` itself, never a wrapped
-/// `Box<T>`. A generated `visit_<t>_seq(&mut self, &'a impl SeqView<'a, T>)` receives one; its `&mut` half
-/// receives a [`SeqEdit`], which is where writing lives.
+/// A readable, **sequence-like** view of a `#[seq]` slot: `Vec`, `VecDeque`, a slice, an array, or a
+/// container of your own — implement this and `#[seq]` accepts it, since no container name is ever
+/// matched. A generated `visit_<t>_seq` receives one.
 ///
-/// Its own methods are positional and free of any borrow: an override may read, walk and edit in
-/// whatever order it likes. Element access is [`Index`] — `&v[i]`, panicking past the end like every
-/// other indexed container — so the trait itself declares only what indexing cannot say: how long
-/// the slot is. Iteration comes from the [`Elements`] supertrait, which is where the `'a` goes: it
-/// stays a separate trait so a container keeps its own iterator types, and so the shapes that cannot
-/// index (a map, a `LinkedList`) can still be iterated.
-///
-/// Writing is [`SeqEdit`]: `&mut v[i]` through its `IndexMut`, and `insert`/`remove` for the size. A
-/// fixed-size slot — a slice, an array — is a `SeqView` and not a `SeqEdit`, which is the whole reason
-/// the two are apart: the shared side of a generated visitor asks only for this, so it accepts shapes
-/// the `&mut` side cannot.
+/// Read an element with `&v[i]` (the [`Index`] supertrait, panicking past the end), count them with
+/// [`len`](Self::len), or iterate through [`Elements`]. Writing is [`SeqEdit`]; a fixed-size slot
+/// implements only this one, which is why the two are separate.
 ///
 /// [`Index`]: core::ops::Index
 pub trait SeqView<'a, T: 'a>: core::ops::Index<usize, Output = T> + Elements<'a, T> {
@@ -518,27 +471,23 @@ pub trait SeqView<'a, T: 'a>: core::ops::Index<usize, Output = T> + Elements<'a,
     }
 }
 
-/// A [`SeqView`] that can also grow and shrink — what a `#[seq]` field's `&mut` side is handed, and
-/// what makes `push`/`remove`/`retain_mut` available. Every container that can resize implements both.
+/// A [`SeqView`] that can also grow and shrink — what a `#[seq]` field's `&mut` side is handed.
 pub trait SeqEdit<'a, T: 'a>: SeqView<'a, T> + core::ops::IndexMut<usize, Output = T> {
     /// Insert before index `i` (`i == len` appends).
     fn insert(&mut self, i: usize, value: T);
     fn remove(&mut self, i: usize) -> T;
 
-    /// Append. No `Self: Sized`: it is the one resizing method that still rides a vtable.
+    /// Append.
     fn push(&mut self, value: T) {
         let n = self.len();
         self.insert(n, value);
     }
     /// Visit each element in place, then drop those for which `f` returns `false`.
     ///
-    /// The provided body is **O(n²)**: it can only shrink the slot through `remove`, which every
-    /// array-backed container implements by shifting the tail. A container that can do better should
-    /// say so — `Vec` and `VecDeque` here forward to their inherent `retain_mut`. The cost is real
-    /// and not hypothetical: a generated `visit_<t>_seq_mut` override holds its slot as a generic
-    /// `V`, so `v.retain_mut(..)` there is always this method, never an inherent one.
-    ///
-    /// `Self: Sized` because of the `impl FnMut` argument; the rest of the trait is object-safe.
+    /// Override it if your container can do better than the provided body, which shrinks through
+    /// `remove` and so is O(n²) on anything array-backed. `Vec` and `VecDeque` forward to their
+    /// inherent `retain_mut`. Generic code — a visitor override — always reaches this method, never
+    /// an inherent one, so the cost is not hypothetical.
     fn retain_mut(&mut self, mut f: impl FnMut(&mut T) -> bool)
     where
         Self: Sized,
@@ -554,12 +503,9 @@ pub trait SeqEdit<'a, T: 'a>: SeqView<'a, T> + core::ops::IndexMut<usize, Output
     }
 }
 
-/// A mutable, **Option-like** view (≤1 element) of an AST `Option` field, bare-element (a nested
-/// `Box`-like layer descends separately, through [`walk::Walk`]). A generated
-/// `visit_<t>_opt_mut(&mut self, &mut impl OptEdit<'a, T>)` receives one, and `visit_<t>_opt` a `&`.
-/// [`get`](Self::get) is the element — indexing would mean nothing for a ≤1 slot. The [`Elements`]
-/// supertrait is what the `'a` is for; it is the same trait every other view sits on, so a consumer's
-/// `Option`-shaped container implements one iteration trait and gets both kinds of slot.
+/// A readable, **Option-like** view (≤1 element) of a `#[opt]` slot. A generated `visit_<t>_opt`
+/// receives one; [`get`](Self::get) is the element, since indexing would mean nothing here. Writing
+/// is [`OptEdit`].
 pub trait OptView<'a, T: 'a>: Elements<'a, T> {
     fn is_some(&self) -> bool;
     fn get(&self) -> Option<&T>;
@@ -569,9 +515,7 @@ pub trait OptView<'a, T: 'a>: Elements<'a, T> {
     }
 }
 
-/// An [`OptView`] that can also be written — what a `#[opt]` field's `&mut` side is handed. The same
-/// read/write line [`SeqView`] and [`SeqEdit`] are drawn on, so the shared side of a generated visitor
-/// never asks for the ability to empty a slot it only reads.
+/// An [`OptView`] that can also be written — what a `#[opt]` field's `&mut` side is handed.
 pub trait OptEdit<'a, T: 'a>: OptView<'a, T> {
     /// Edit the node in place — no clone.
     fn get_mut(&mut self) -> Option<&mut T>;
@@ -796,16 +740,20 @@ pub mod walk {
     /// `Self` is a container: delegate `H` to the value(s) it holds.
     pub struct Thru<H>(core::marker::PhantomData<H>);
 
-    /// How an AST value hands itself to a visitor — the descent half of the walk, where the trait
-    /// `visitor!` generates is the dispatch half.
+    /// How a value offers its children to a visitor. Implement it to make a container of your own
+    /// walkable; `ast` already covers `Vec`, `VecDeque`, `LinkedList`, `Option`, `Box`, maps,
+    /// slices, arrays and tuples.
     ///
-    /// `V` is the visitor. `M` is the tag minted by the `visitor!` module the walk belongs to, so two
-    /// visitor modules over the same node do not write conflicting impls. `H` is the indicator:
-    /// which parts of `Self` to descend into.
+    /// Three parameters:
     ///
-    /// `H` is what lets the container impls below stay generic in the types they hold — `(Length, Line)`
-    /// and `(Line, Line)` are the *same* impl at different indicators — so no leaf type is ever named and
-    /// no shape needs an impl of its own.
+    /// * `V` — the visitor.
+    /// * `H` — the indicator, which says *which* parts of `Self` to descend into. See the table on
+    ///   the [module](self) docs.
+    /// * `M` — a tag belonging to the `visitor!` module this walk is for, so two visitors over the
+    ///   same node do not collide.
+    ///
+    /// Because the shape lives in `H` rather than in the impl, one impl covers every container of a
+    /// given form: `(Length, Line)` and `(Line, Line)` are the same impl at different indicators.
     #[cfg_attr(
         has_diagnostic,
         diagnostic::on_unimplemented(

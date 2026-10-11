@@ -98,13 +98,22 @@ fn main() {
     let mut k = 0;
     s.visit(|_: &Expr| k += 1);
     assert_eq!(k, 1);
+
+    // A tuple of two to eight closures runs them all in a *single* walk, each on the node type
+    // its own argument names — here one of `ext`'s types and one of `base`'s.
+    let mut stmts = 0;
+    let mut exprs = 0;
+    s.visit((|_: &Stmt| stmts += 1, |_: &Expr| exprs += 1));
+    assert_eq!((stmts, exprs), (1, 1));
 }
 ```
 
-`#[opt]` does for an `Option<T>` slot what `#[seq]` does for a list. A tuple of two to eight
-*closures* runs them all in a single walk; a visitor cannot join that tuple, because folding into
-one hook is what makes the single walk possible, so two visitors are two walks and two calls. A
-visitor implements every trait in its chain — the ancestors it does not touch take an empty impl,
+`#[opt]` does for an `Option<T>` slot what `#[seq]` does for a list.
+
+A tuple takes closures and nothing else. Folding them into one hook is what buys the single walk,
+and a visitor descends on its own, so it cannot join — two visitors are two walks and two calls.
+
+A visitor implements every trait in its chain; the ancestors it does not touch take an empty impl,
 as `impl base::VisitMut for Depth {}` does above.
 
 ## Using it through another crate

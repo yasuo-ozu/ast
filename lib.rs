@@ -441,14 +441,34 @@ pub trait Repeater<const INDEX: usize> {
 ///
 /// Every slot view has this as a supertrait, so anything a generated visitor hands you can be
 /// iterated.
+///
+/// ```
+/// use ast::Elements;
+/// use std::collections::BTreeMap;
+///
+/// let v = vec![1, 2, 3];
+/// assert_eq!(v.elements().sum::<i32>(), 6);
+///
+/// let mut v = vec![1, 2, 3];
+/// for x in v.elements_mut() {
+///     *x *= 10;
+/// }
+/// assert_eq!(v, vec![10, 20, 30]);
+///
+/// // A map iterates its values; the keys are not touched.
+/// let m = BTreeMap::from([("a", 1), ("b", 2)]);
+/// assert_eq!(m.elements().sum::<i32>(), 3);
+/// ```
 pub trait Elements<'a, T: 'a> {
     /// The container's own by-reference iterator.
     type Iter: Iterator<Item = &'a T>;
     /// The container's own by-`&mut` iterator.
     type IterMut: Iterator<Item = &'a mut T>;
 
-    /// Iterate what the container holds, by shared ref. Named `elements` (not `iter`) so it never
-    /// shadows the slice `iter` on a concrete `Vec` when the trait is in scope.
+    /// Iterate what the container holds, by shared reference.
+    ///
+    /// Called `elements` rather than `iter` so that having this trait in scope never changes what
+    /// `vec.iter()` means.
     fn elements(&'a self) -> Self::Iter;
     /// Iterate what the container holds, by `&mut`, for in-place edits. Keys, for a map, are untouched.
     fn elements_mut(&'a mut self) -> Self::IterMut;
@@ -463,18 +483,58 @@ pub trait Elements<'a, T: 'a> {
 /// implements only this one, which is why the two are separate.
 ///
 /// [`Index`]: core::ops::Index
+/// ```
+/// use ast::SeqView;
+///
+/// fn second<'a, V: SeqView<'a, i32>>(v: &'a V) -> Option<&'a i32> {
+///     if v.len() < 2 {
+///         return None;
+///     }
+///     Some(&v[1])
+/// }
+///
+/// assert_eq!(second(&vec![1, 2, 3]), Some(&2));
+/// assert_eq!(second(&vec![1]), None);
+/// ```
 pub trait SeqView<'a, T: 'a>: core::ops::Index<usize, Output = T> + Elements<'a, T> {
+    /// How many elements the slot holds.
     fn len(&self) -> usize;
 
+    /// Whether the slot holds none.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
 }
 
 /// A [`SeqView`] that can also grow and shrink — what a `#[seq]` field's `&mut` side is handed.
+///
+/// ```
+/// use ast::SeqEdit;
+///
+/// // The shape a `visit_<t>_seq_mut` override takes: generic over the slot, so it works for any
+/// // container the field might be.
+/// fn keep_even<'a, V: SeqEdit<'a, i32>>(v: &'a mut V) {
+///     v.retain_mut(|x| *x % 2 == 0);
+///     v.push(10);
+/// }
+///
+/// let mut v = vec![1, 2, 3, 4];
+/// keep_even(&mut v);
+/// assert_eq!(v, vec![2, 4, 10]);
+/// ```
 pub trait SeqEdit<'a, T: 'a>: SeqView<'a, T> + core::ops::IndexMut<usize, Output = T> {
-    /// Insert before index `i` (`i == len` appends).
+    /// Insert before index `i`. `i == len` appends.
+    ///
+    /// # Panics
+    ///
+    /// If `i > len`.
     fn insert(&mut self, i: usize, value: T);
+
+    /// Take the element at `i` out, shifting the rest down.
+    ///
+    /// # Panics
+    ///
+    /// If `i >= len`.
     fn remove(&mut self, i: usize) -> T;
 
     /// Append.
@@ -507,22 +567,41 @@ pub trait SeqEdit<'a, T: 'a>: SeqView<'a, T> + core::ops::IndexMut<usize, Output
 /// receives one; [`get`](Self::get) is the element, since indexing would mean nothing here. Writing
 /// is [`OptEdit`].
 pub trait OptView<'a, T: 'a>: Elements<'a, T> {
+    /// Whether the slot is filled.
     fn is_some(&self) -> bool;
+    /// The node, if there is one.
     fn get(&self) -> Option<&T>;
 
+    /// Whether the slot is empty.
     fn is_none(&self) -> bool {
         !self.is_some()
     }
 }
 
 /// An [`OptView`] that can also be written — what a `#[opt]` field's `&mut` side is handed.
+///
+/// ```
+/// use ast::OptEdit;
+///
+/// fn default_to_zero<'a, V: OptEdit<'a, i32>>(v: &'a mut V) {
+///     if v.is_none() {
+///         v.set(0);
+///     }
+/// }
+///
+/// let mut slot: Option<i32> = None;
+/// default_to_zero(&mut slot);
+/// assert_eq!(slot, Some(0));
+/// ```
 pub trait OptEdit<'a, T: 'a>: OptView<'a, T> {
-    /// Edit the node in place — no clone.
+    /// Edit the node in place, without replacing it.
     fn get_mut(&mut self) -> Option<&mut T>;
-    /// Fill or replace the node (works on an empty slot).
+    /// Fill the slot, or replace what is in it.
     fn set(&mut self, value: T);
+    /// Empty the slot and hand back what was in it.
     fn take(&mut self) -> Option<T>;
 
+    /// Empty the slot, dropping what was in it.
     fn clear(&mut self) {
         let _ = self.take();
     }
@@ -754,6 +833,37 @@ pub mod walk {
     ///
     /// Because the shape lives in `H` rather than in the impl, one impl covers every container of a
     /// given form: `(Length, Line)` and `(Line, Line)` are the same impl at different indicators.
+    ///
+    /// A container of your own needs one impl per side. Stay generic in `M`, `H` and `V` and pass
+    /// the indicator straight through — then your type works in any visitor, holding any node:
+    ///
+    /// ```
+    /// use ast::walk::{Thru, Walk, WalkMut};
+    ///
+    /// pub struct Stack<T>(Vec<T>);
+    ///
+    /// // `Thru<H>` means "this is a container": hand `H` on to each thing it holds.
+    /// impl<M, H, V: ?Sized, T: Walk<M, H, V>> Walk<M, Thru<H>, V> for Stack<T> {
+    ///     fn walk(&self, v: &mut V) {
+    ///         for x in &self.0 {
+    ///             x.walk(v);
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// impl<M, H, V: ?Sized, T: WalkMut<M, H, V>> WalkMut<M, Thru<H>, V> for Stack<T> {
+    ///     fn walk_mut(&mut self, v: &mut V) {
+    ///         for x in &mut self.0 {
+    ///             x.walk_mut(v);
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// That is all a `#[seq]`-less field needs. To make it an edit target too, add
+    /// [`SeqView`](crate::SeqView)/[`SeqEdit`](crate::SeqEdit) — or
+    /// [`OptView`](crate::OptView)/[`OptEdit`](crate::OptEdit) for a one-slot shape — and
+    /// [`Elements`](crate::Elements) to iterate it.
     #[cfg_attr(
         has_diagnostic,
         diagnostic::on_unimplemented(

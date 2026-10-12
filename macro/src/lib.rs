@@ -29,7 +29,9 @@ pub fn derive_visiting(input: TokenStream1) -> TokenStream1 {
     // Which crate the generated code names. `#[visiting(crate = ::my_crate)]` points it at a facade
     // that re-exports this crate, which is what a grammar depending only on that facade needs;
     // otherwise the impls read `::visiting::..`.
-    let path = visiting::parse_crate_path(&input.attrs).unwrap_or_else(|| parse_quote!(::visiting));
+    let path = visiting::parse_visiting(&input.attrs)
+        .krate
+        .unwrap_or_else(|| parse_quote!(::visiting));
     crate::visiting::derive_visiting(&input, random(), &path).into()
 }
 

@@ -89,7 +89,7 @@ pub(crate) fn subast_path_is_rooted(path: &Path) -> bool {
 
 /// One item inside `#[visiting(..)]`: either `crate = <path>`, which names the facade crate the
 /// generated code should reach this crate through, or a path to a type the walk should follow.
-pub(crate) enum VisitingItem {
+enum VisitingItem {
     Crate(Path),
     Follow(SubastEntry),
 }
@@ -105,32 +105,52 @@ impl Parse for VisitingItem {
     }
 }
 
-/// The facade crate from `#[visiting(crate = <path>)]`, if any.
-pub(crate) fn parse_crate_path(attrs: &[Attribute]) -> Option<Path> {
-    for attr in attrs {
-        if !attr.path().is_ident("visiting") {
-            continue;
-        }
-        if let Meta::List(ml) = &attr.meta {
-            if let Ok(items) =
-                Punctuated::<VisitingItem, Token![,]>::parse_terminated.parse2(ml.tokens.clone())
-            {
-                for i in items {
-                    if let VisitingItem::Crate(p) = i {
-                        return Some(p);
-                    }
-                }
-            }
-        }
-    }
-    None
+/// The contents of one `#[visiting(..)]`: a facade crate, types to follow, or both.
+///
+/// One attribute does both jobs, told apart by syntax — `crate = <path>` names the crate the
+/// generated code should reach this one through, and a bare path names a type the walk should
+/// follow. [`merge`](Self::merge) folds a second attribute's contents in, so the two forms may share
+/// one attribute or sit on separate ones.
+#[derive(Default)]
+pub(crate) struct VisitingAttribute {
+    pub(crate) krate: Option<Path>,
+    pub(crate) follow: Vec<SubastEntry>,
 }
 
-/// Collect the types to follow from `#[visiting(..)]` from the type's attributes. Each path must be fully qualified
-/// (see `subast_path_is_rooted`). Two entries resolving to the same `matchkey` is an error (a bare field
-/// head can't disambiguate them — alias one).
-pub(crate) fn parse_subast(attrs: &[Attribute]) -> Vec<SubastEntry> {
-    let mut entries = Vec::new();
+impl Parse for VisitingAttribute {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut args = VisitingAttribute::default();
+        for item in Punctuated::<VisitingItem, Token![,]>::parse_terminated(input)? {
+            match item {
+                // First one wins; a second is a mistake worth naming rather than silently dropping.
+                VisitingItem::Crate(p) => match &args.krate {
+                    None => args.krate = Some(p),
+                    Some(_) => emit_error!(p, "`crate = ..` given more than once"),
+                },
+                VisitingItem::Follow(e) => args.follow.push(e),
+            }
+        }
+        Ok(args)
+    }
+}
+
+impl VisitingAttribute {
+    fn merge(&mut self, other: VisitingAttribute) {
+        match (&self.krate, other.krate) {
+            (None, k) => self.krate = k,
+            (Some(_), Some(p)) => emit_error!(p, "`crate = ..` given more than once"),
+            (Some(_), None) => {}
+        }
+        self.follow.extend(other.follow);
+    }
+}
+
+/// Read every `#[visiting(..)]` on the type, in one pass.
+///
+/// Each path to follow must be fully qualified (see `subast_path_is_rooted`), and two resolving to
+/// the same `matchkey` is an error (a bare field head can't disambiguate them — alias one).
+pub(crate) fn parse_visiting(attrs: &[Attribute]) -> VisitingAttribute {
+    let mut args = VisitingAttribute::default();
     for attr in attrs {
         if !attr.path().is_ident("visiting") {
             continue;
@@ -145,20 +165,12 @@ pub(crate) fn parse_subast(attrs: &[Attribute]) -> Vec<SubastEntry> {
                 continue;
             }
         };
-        // `crate = <path>` names the facade crate and is read by `parse_crate_path`; everything else is a
-        // type to follow. Dropping the `crate` item here keeps one attribute doing both jobs.
-        let items = match Punctuated::<VisitingItem, Token![,]>::parse_terminated.parse2(list) {
-            Ok(parsed) => parsed,
-            Err(e) => {
-                emit_error!(e.span(), "invalid `#[visiting(..)]`: {}", e);
-                continue;
-            }
-        };
-        entries.extend(items.into_iter().filter_map(|i| match i {
-            VisitingItem::Crate(_) => None,
-            VisitingItem::Follow(e) => Some(e),
-        }));
+        match VisitingAttribute::parse.parse2(list) {
+            Ok(parsed) => args.merge(parsed),
+            Err(e) => emit_error!(e.span(), "invalid `#[visiting(..)]`: {}", e),
+        }
     }
+    let entries = &args.follow;
     // Every entry must be rooted, whatever it names. The path has two jobs: as a *match key* only the
     // last segment is compared, so the root is irrelevant there — but as a *fetch target* for a type
     // `define_visit!(..)` does not list, it is invoked as a macro to pull that type's definition, in the
@@ -171,7 +183,7 @@ pub(crate) fn parse_subast(attrs: &[Attribute]) -> Vec<SubastEntry> {
     // (a `use` resolves where it is written), but only one level deep: past the first hop the alias
     // hides the module the next fetch needs, so the restriction would come back a level further from
     // the code that has to change.
-    for e in &entries {
+    for e in entries {
         if !subast_path_is_rooted(&e.path) {
             let p = &e.path;
             emit_error!(
@@ -209,7 +221,7 @@ pub(crate) fn parse_subast(attrs: &[Attribute]) -> Vec<SubastEntry> {
         }
     }
     let mut seen: HashMap<String, ()> = HashMap::new();
-    for e in &entries {
+    for e in entries {
         let key = e.matchkey().to_string();
         if seen.insert(key.clone(), ()).is_some() {
             emit_error!(
@@ -219,7 +231,7 @@ pub(crate) fn parse_subast(attrs: &[Attribute]) -> Vec<SubastEntry> {
             );
         }
     }
-    entries
+    args
 }
 
 /// Produce a cleaned copy of the input definition (attributes stripped, except the field-level
@@ -339,7 +351,7 @@ pub fn derive_visiting(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStr
     }
 
     check_ambiguous_last_idents(input);
-    let subast = parse_subast(&input.attrs);
+    let subast = parse_visiting(&input.attrs).follow;
     let field_heads = field_head_idents(input);
     for e in &subast {
         let key = e.matchkey();
@@ -414,7 +426,7 @@ pub fn derive_visiting(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStr
                     }
                 })
             });
-            // No matching field: `parse_subast`'s own warning already covers that case.
+            // No matching field: `parse_visiting`'s own warning already covers that case.
             let tp = found?;
             let span = e.path.span();
             Some(quote! {

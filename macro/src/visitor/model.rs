@@ -157,7 +157,7 @@ impl<'a> Model<'a> {
         let targets: Vec<&DoneType> = st
             .done
             .iter()
-            .filter(|d| item_ident(&d.def).map_or(false, |id| visited.contains(&id.to_string())))
+            .filter(|d| item_ident(&d.def).is_some_and(|id| visited.contains(&id.to_string())))
             .collect();
         if targets.is_empty() {
             let at = st
@@ -201,7 +201,7 @@ impl<'a> Model<'a> {
             .collect();
         let has_bounded_unshared = targets.iter().any(|d| {
             item_where_preds(&d.def).iter().any(|p| {
-                where_pred_param(p).map_or(false, |id| unshared_names.contains(&id.to_string()))
+                where_pred_param(p).is_some_and(|id| unshared_names.contains(&id.to_string()))
             })
         });
 

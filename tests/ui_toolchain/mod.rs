@@ -25,7 +25,7 @@ pub const BLESSED: &str = "1.90.0";
 ///
 /// Returns `false` after printing why, so a caller can `return` and leave the test passing.
 pub fn should_run(suite: &str) -> bool {
-    if std::env::var_os("VISITING_UI").map_or(false, |v| v != "0") {
+    if std::env::var_os("VISITING_UI").is_some_and(|v| v != "0") {
         return true;
     }
     match active_version() {

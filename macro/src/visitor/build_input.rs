@@ -732,8 +732,49 @@ pub(crate) fn state_tokens(
     }
 }
 
+/// `__visitor_build` is an `announce` callback as well as the carrier of its own state.
+///
+/// A fetch invokes the target's trampoline with this macro as the last continuation, so what comes
+/// back is announce's shape — the continuation list, the definitions newest-first, then our state as
+/// announce's untouched `REST`, behind an `@state` marker. The definition and the follow-list are
+/// read out of the entry; the follow-list rides in announce's `META`, and a type announced by a
+/// crate that has never heard of this one carries none, which is right.
+///
+/// The first bounce carries only state, with no announce wrapper, so both shapes are accepted.
+fn parse_callback_or_state(input: TokenStream) -> syn::Result<BuildInput> {
+    /// Peel `@state <callback> { <state> }`, which is what we put in announce's `REST`.
+    fn unwrap_state(ts: TokenStream) -> syn::Result<TokenStream> {
+        fn p(input: syn::parse::ParseStream) -> syn::Result<TokenStream> {
+            input.parse::<Token![@]>()?;
+            let kw: Ident = input.parse()?;
+            if kw != "state" {
+                return Err(syn::Error::new(kw.span(), "expected `@state`"));
+            }
+            input.parse::<Path>()?;
+            Ok(input.parse::<proc_macro2::Group>()?.stream())
+        }
+        (p as fn(syn::parse::ParseStream) -> syn::Result<TokenStream>).parse2(ts)
+    }
+
+    if let Ok(ann) = announce_helper::Input::parse.parse2(input.clone()) {
+        if let Ok(state_ts) = unwrap_state(ann.rest.clone()) {
+            let mut st: BuildInput = syn::parse2(state_ts)?;
+            if let Some(entry) = ann.entries.first() {
+                st.just_def = Some(entry.item()?);
+                if let Some(m) = entry.find_meta("follow") {
+                    if let Some(args) = m.args.clone() {
+                        st.just_subast = parse_subentries(args)?;
+                    }
+                }
+            }
+            return Ok(st);
+        }
+    }
+    syn::parse2(input)
+}
+
 pub fn build(input: TokenStream) -> TokenStream {
-    let mut st: BuildInput = match syn::parse2(input) {
+    let mut st: BuildInput = match parse_callback_or_state(input) {
         Ok(s) => s,
         Err(e) => return e.to_compile_error(),
     };
@@ -798,19 +839,8 @@ pub fn build(input: TokenStream) -> TokenStream {
             &done_ts,
             rest,
         );
-        // announce's calling convention; see `__visiting_from_announce`. `build` is
-        // `<root>::_imp::visiting_macro::__visitor_build`, so dropping its last three segments
-        // recovers the root the consumer reaches this crate by — which may be a facade.
-        let adapter = {
-            let mut p = (*build).clone();
-            for _ in 0..3 {
-                p.segments.pop();
-            }
-            let segs = p.segments.iter().map(|s| &s.ident);
-            let lead = p.leading_colon;
-            quote!( #lead #(#segs ::)* visit::__visiting_from_announce )
-        };
-        return quote! { #next ! { [ #next !, #adapter ! ] @ast #build { #state } } };
+        // announce's calling convention; our state rides in `REST`.
+        return quote! { #next ! { [ #next !, #build ! ] @state #build { #state } } };
     }
 
     generate_module(&st)

@@ -193,7 +193,7 @@ pub(crate) struct Lower<'a> {
 /// [`Lower::check_generic_element`].
 fn is_phantom_data(ty: &Type) -> bool {
     matches!(ty, Type::Path(tp)
-        if tp.path.segments.last().map_or(false, |s| s.ident == "PhantomData"))
+        if tp.path.segments.last().is_some_and(|s| s.ident == "PhantomData"))
 }
 
 impl<'a> Lower<'a> {

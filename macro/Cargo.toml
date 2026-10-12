@@ -2,7 +2,7 @@
 name = "visiting-macro"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.61"
+rust-version = "1.71"
 description = "Proc macros for the `visiting` crate"
 license = "MIT"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
@@ -19,6 +19,7 @@ quote = "1.0"
 template-quote = "0.4"
 proc-macro-error3 = { version = "3", default-features = false }
 type-leak = "0.7.0"
+announce-helper = { path = "../../ozu/announce-helper" }
 
 [dependencies.syn]
 version = "2.0"

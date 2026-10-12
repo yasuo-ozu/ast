@@ -37,8 +37,7 @@ pub mod visit {
     // generated code reaches — `#root::visit::{Visiting, Repeater}` from the derive, `__visiting_rt::{..}`
     // from `define_visit!`.
     pub use super::{
-        __visiting_from_announce, define_visit, walk, Elements, OptEdit, OptView, Repeater,
-        SeqEdit, SeqView, Visiting,
+        define_visit, walk, Elements, OptEdit, OptView, Repeater, SeqEdit, SeqView, Visiting,
     };
 }
 
@@ -377,41 +376,6 @@ pub use visiting_macro::Visiting;
 /// A type may be listed in only one `define_visit!` per crate. Each listing gives it its own
 /// `visit`/`visit_mut` method, so a second one is `E0592: duplicate definitions`. See
 /// [Extending a visitor](#extending-a-visitor).
-/// Translate an [`announce`](https://github.com/yasuo-ozu/ozu) callback into the shape
-/// `__visitor_build` expects.
-///
-/// `announce` and this crate solve the same problem the same way — a `#[macro_export]`ed
-/// `macro_rules!` beside the item, carrying its tokens to a macro in another crate — but they spell
-/// the handshake differently. announce calls back with
-///
-/// ```text
-/// cb! { [cb!] path::Item! => [META] { DEF } REST }
-/// ```
-///
-/// while the generator wants `REST` followed by `@ast { DEF } @subast { .. }`. This sits in between.
-/// Nothing here depends on announce: the only coupling is the token shape, which is why a grammar
-/// can walk an `#[announce]`d type from a crate that has never heard of this one.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __visiting_from_announce {
-    // A type carrying this crate's derive puts its follow-list in `META`.
-    (
-        [$($cb:tt)*]
-        $($p:ident)::+ ! => [ subast { $($subast:tt)* } ] { $($def:tt)* }
-        @ast $build:path { $($pre:tt)* }
-    ) => {
-        $build ! { $($pre)* @ast { $($def)* } @subast { $($subast)* } }
-    };
-    // A plain `#[announce]`d type declares no follow-list, so it gets an empty one.
-    (
-        [$($cb:tt)*]
-        $($p:ident)::+ ! => [$($meta:tt)*] { $($def:tt)* }
-        @ast $build:path { $($pre:tt)* }
-    ) => {
-        $build ! { $($pre)* @ast { $($def)* } @subast { } }
-    };
-}
-
 #[macro_export]
 macro_rules! define_visit {
     ($($t:tt)*) => {

@@ -60,9 +60,10 @@ pub(crate) fn subast_tokens(entries: &[SubastEntry]) -> Vec<TokenStream> {
 /// downstream-portable — the recommended canonical form).
 pub(crate) fn crate_rooted_tokens(path: &Path) -> TokenStream {
     let rooted = path.leading_colon.is_none()
-        && path.segments.first().map_or(false, |s| {
-            s.ident == "crate" && matches!(s.arguments, PathArguments::None)
-        });
+        && path
+            .segments
+            .first()
+            .is_some_and(|s| s.ident == "crate" && matches!(s.arguments, PathArguments::None));
     if rooted {
         let rest: Vec<&PathSegment> = path.segments.iter().skip(1).collect();
         quote!( $crate #(:: #rest)* )
@@ -458,28 +459,19 @@ pub fn derive_visiting(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStr
         #[macro_export]
         #[doc(hidden)]
         macro_rules! #macro_name {
-            // Callback muncher: append this type's metadata, then re-invoke the continuation `$cb`.
-            (@ast $cb:path { $($pre:tt)* }) => {
+            // An `announce` trampoline: hand this definition to the callback, with the follow-list
+            // in announce's META slot. The list is `[Self!, callback!]` at every site this crate
+            // emits, so it is matched opaquely; a longer chain would need the usual pop-and-forward.
+            // The continuation list is matched as one `tt` — destructuring "everything, then the
+            // last element" is ambiguous in macro_rules — so the callback is named again behind
+            // `@state`, which is also where our own state rides. An `#[announce]`d type ignores all
+            // of that: announce reads the list itself and passes `@state ..` through as its REST.
+            ($_list:tt @state $cb:path { $($pre:tt)* }) => {
                 $cb ! {
-                    $($pre)*
-                    @ast { #cleaned }
-                    @subast { #(#subast_entry_tokens),* }
-                }
-            };
-            // The same definition, offered through `announce`'s calling convention, so a fetch can
-            // use one shape for a type carrying this derive and for one carrying `#[announce]`.
-            // The follow-list rides in announce's `META` slot, where a plain `#[announce]` type
-            // leaves nothing — which is correct, since it declares no follow-list.
-            // The list is `[Self!, adapter!]` at every fetch site this crate emits, so it is
-            // matched opaquely and the adapter named outright. A faithful announce trampoline would
-            // pop itself and forward to whatever comes next; that is the part to generalise if this
-            // ever has to sit in a longer chain.
-            ([$($_list:tt)*] $($rest:tt)*) => {
-                #root::visit::__visiting_from_announce ! {
-                    [ #root::visit::__visiting_from_announce ! ]
-                    #ident ! => [ subast { #(#subast_entry_tokens),* } ]
+                    [$cb !]
+                    #ident ! => [ follow ( #(#subast_entry_tokens),* ) ]
                     { #cleaned }
-                    $($rest)*
+                    @state $cb { $($pre)* }
                 }
             };
         }

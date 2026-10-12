@@ -102,7 +102,7 @@ fn field_view(attrs: &[Attribute]) -> Option<Container> {
 
 /// Whether a field carries `#[skip]`: never followed, whatever its type. The only way to say "this
 /// reachable type must not be walked here" once a field is followed because its type is visited
-/// rather than because the node repeated that in `#[subast]`.
+/// rather than because the node repeated that in `#[visiting]`.
 fn field_skips(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|a| a.path().is_ident("skip"))
 }
@@ -126,7 +126,7 @@ fn abort_marker_not_visited(ty: &Type, kind: &Container, single: bool) -> ! {
     );
 }
 
-/// The node being destructured: its definition, the `#[subast]` allowlist that came with it, and the
+/// The node being destructured: its definition, the `#[visiting]` allowlist that came with it, and the
 /// path to name it by. Carried as one value because the three only ever travel together — down every
 /// field, through every tuple element, and into every drilled intermediate.
 #[derive(Clone, Copy)]
@@ -156,7 +156,7 @@ struct FieldIn<'a> {
 
 /// Lowers a visited type's `visit_*` body: a field followed via a *visited/inherited* head becomes a
 /// `this.visit_<head>(..)` method call; a field followed via an *unlisted intermediate* is drilled
-/// through inline (its def destructured, recursing into its `#[subast]` fields); any other field is
+/// through inline (its def destructured, recursing into its `#[visiting]` fields); any other field is
 /// a leaf.
 pub(crate) struct Lower<'a> {
     /// Heads that get a method call (the `define_visit!(..)` set ∪ inherited).
@@ -178,12 +178,12 @@ pub(crate) struct Lower<'a> {
     pub(crate) target_set: &'a HashSet<String>,
     /// Head types reached that are *inherited* — visited by a base module, so this module has no
     /// `Walk` impl for them. Recorded as `(dedup key, type tokens)` and emitted alongside the node
-    /// impls, using the `#[subast]` path plus the arguments the field wrote.
+    /// impls, using the `#[visiting]` path plus the arguments the field wrote.
     pub(crate) inherited_heads: &'a RefCell<Vec<(String, TokenStream, Ident)>>,
     /// Every head this visitor can name — its own targets plus what it inherits — with the path to
     /// name it by. Folded into each node's peel set so a field is followed because its type is
-    /// visited, not because the node repeated that in `#[subast]`, and consulted when a head has no
-    /// `#[subast]` entry to resolve it.
+    /// visited, not because the node repeated that in `#[visiting]`, and consulted when a head has no
+    /// `#[visiting]` entry to resolve it.
     pub(crate) reachable: &'a HashMap<String, Path>,
     pub(crate) reachable_keys: &'a HashSet<String>,
 }
@@ -232,7 +232,7 @@ impl<'a> Lower<'a> {
         if stack.iter().any(|s| s == &key) {
             abort!(
                 head,
-                "`#[subast]` cycle through unlisted intermediate `{}`: it cannot be drilled inline. \
+                "`#[visiting]` cycle through unlisted intermediate `{}`: it cannot be drilled inline. \
                  List one of the cycle's types in `define_visit!(..)` so a method call breaks the recursion",
                 head
             );
@@ -380,7 +380,7 @@ impl<'a> Lower<'a> {
             _ => return,
         };
         // `done_by_path` is keyed by the `define_visit!(..)` paths (`crate::…`), but `head_path` came from
-        // a `#[subast]` entry, which the metadata macro re-roots to `$crate::…`. Fold the root so the
+        // a `#[visiting]` entry, which the metadata macro re-roots to `$crate::…`. Fold the root so the
         // two meet; a miss here only costs the diagnostic, never correctness.
         let key = norm_path(head_path).replace("$crate", "crate");
         let def = match self.done_by_path.get(&key) {
@@ -494,7 +494,7 @@ impl<'a> Lower<'a> {
         // An empty body (a leaf head, or a finite drill reaching nothing) ⇒ the whole field is a leaf.
         let acc = innermost_acc(&p.conts, binding);
         // The effective head type (real ident + path) when this is a followed `Head::Path`: self
-        // (implicit) or a `#[subast]` entry (an aliased `Real as Aliased` dispatches to `visit_real`).
+        // (implicit) or a `#[visiting]` entry (an aliased `Real as Aliased` dispatches to `visit_real`).
         let p_head_wrote: Option<Path> = match &p.head {
             Head::Path { wrote, .. } => Some(wrote.clone()),
             Head::Tuple(_) => None,
@@ -508,7 +508,7 @@ impl<'a> Lower<'a> {
                 .find(|e| &e.key == phead)
                 .map(|e| {
                     let real = last_ident(&e.path).clone();
-                    // Prefer the path this visitor knows the type by. A `#[subast]` path may be
+                    // Prefer the path this visitor knows the type by. A `#[visiting]` path may be
                     // written however the declaring module liked — only its last segment is compared
                     // — so it is not necessarily nameable *here*. `reachable` holds the spelling
                     // `define_visit!(..)` used, which is.
@@ -517,7 +517,7 @@ impl<'a> Lower<'a> {
                         None => (real, e.path.clone()),
                     }
                 })
-                // No `#[subast]` entry, so the head is one this visitor already names: a type it
+                // No `#[visiting]` entry, so the head is one this visitor already names: a type it
                 // lists, or one it inherits (whose path arrived through the base's `__visiting_visited`).
                 // An entry would only have repeated what the visitor already said.
                 .or_else(|| {
@@ -597,7 +597,7 @@ impl<'a> Lower<'a> {
         // that type lives in the base module and this module has no path with which to impl for it.
         // An inherited head's type lives in a base module, which wrote its `Walk` impl against *its*
         // tag. Record the head so this module emits one against its own tag too; the path comes from
-        // `#[subast]` and the arguments from the field.
+        // `#[visiting]` and the arguments from the field.
         if let (Head::Path { args, .. }, Some((h, hpath))) = (&p.head, &resolved) {
             if !self.target_set.contains(&h.to_string()) {
                 let ty = quote!( #hpath #args );

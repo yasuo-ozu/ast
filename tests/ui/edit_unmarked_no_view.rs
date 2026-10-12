@@ -12,7 +12,7 @@ pub enum Leaf<S> {
 }
 
 #[derive(Visiting)]
-#[subast(crate::Leaf)]
+#[visiting(crate::Leaf)]
 pub struct Wrap<S> {
     pub items: Vec<Leaf<S>>,   // not `#[seq]` -> no `visit_leaf_seq_mut`
     pub last: Option<Leaf<S>>, // not `#[opt]` -> no `visit_leaf_opt_mut`

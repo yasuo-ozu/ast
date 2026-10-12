@@ -10,7 +10,7 @@ pub enum Type<S> {
 }
 
 #[derive(Visiting)]
-#[subast(crate::Type)]
+#[visiting(crate::Type)]
 pub struct Item<S> {
     pub ty: Type<S>,
 }

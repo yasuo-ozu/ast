@@ -140,7 +140,7 @@ mod borrowed_elements {
     pub struct Borrowed<'s>(pub &'s str);
 
     #[derive(Visiting, Debug)]
-    #[subast(crate::borrowed_elements::Borrowed)]
+    #[visiting(crate::borrowed_elements::Borrowed)]
     pub struct Doc<'s> {
         #[seq]
         pub words: Vec<Borrowed<'s>>,

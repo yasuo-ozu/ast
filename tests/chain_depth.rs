@@ -15,22 +15,22 @@ mod deep {
         X(PhantomData<S>),
     }
     #[derive(Visiting)]
-    #[subast(crate::deep::A)]
+    #[visiting(crate::deep::A)]
     pub struct B<S> {
         pub a: A<S>,
     }
     #[derive(Visiting)]
-    #[subast(crate::deep::B)]
+    #[visiting(crate::deep::B)]
     pub struct C<S> {
         pub b: B<S>,
     }
     #[derive(Visiting)]
-    #[subast(crate::deep::C)]
+    #[visiting(crate::deep::C)]
     pub struct D<S> {
         pub c: C<S>,
     }
     #[derive(Visiting)]
-    #[subast(crate::deep::D)]
+    #[visiting(crate::deep::D)]
     pub struct E<S> {
         pub d: D<S>,
     }
@@ -114,13 +114,13 @@ mod widened {
         U(PhantomData<S>),
     }
     #[derive(Visiting)]
-    #[subast(crate::widened::Type)]
+    #[visiting(crate::widened::Type)]
     pub struct Expr<S> {
         pub t: Type<S>,
     }
     // The extender carries a parameter its ancestors never had.
     #[derive(Visiting)]
-    #[subast(crate::widened::Expr)]
+    #[visiting(crate::widened::Expr)]
     pub struct Item<S, T> {
         pub e: Expr<S>,
         pub tag: PhantomData<T>,

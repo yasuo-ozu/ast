@@ -5,7 +5,7 @@ use super::*;
 ///
 /// A visitor names a type by the last segment of its path, so `a::Foo` and `b::Foo` are one name:
 /// one `visit_foo`, one hook, one entry here. [`check_last_segment_collisions`] catches a pair
-/// inside a single `define_visit!(..)` list, and the `#[subast]` checks catch a pair meeting in one
+/// inside a single `define_visit!(..)` list, and the `#[visiting]` checks catch a pair meeting in one
 /// node, but neither looks along the *chain* — where one ancestor contributes each. Left alone the
 /// map silently keeps one of them, and the mismatch surfaces later as `multiple applicable items in
 /// scope` naming a method the user never wrote.
@@ -93,7 +93,7 @@ pub(crate) struct Model<'a> {
     pub(crate) visited: HashSet<String>,
     /// Every head this visitor can name — its own targets plus what it inherits — with the path to
     /// name it by. This is what makes a field followed because its type is *visited*, rather than
-    /// because the owning node repeated that fact in `#[subast]`.
+    /// because the owning node repeated that fact in `#[visiting]`.
     pub(crate) reachable: HashMap<String, Path>,
     pub(crate) reachable_keys: HashSet<String>,
     /// Heads that recurse through a `visit_*` method (visited here ∪ inherited). Every other

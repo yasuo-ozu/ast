@@ -11,7 +11,7 @@ pub enum Item<S> {
 }
 
 #[derive(Visiting)]
-#[subast(crate::Item)]
+#[visiting(crate::Item)]
 pub struct List<S> {
     #[seq]
     pub items: Vec<Item<S>>, // `Item` is inherited from `base`, not targeted by `ext`

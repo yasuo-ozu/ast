@@ -27,10 +27,10 @@ pub enum Expr {
     Many(#[seq] Vec<Expr>),
 }
 
-// `#[subast]` names a type this visitor should follow but does not list; `#[skip]` takes a field
+// `#[visiting]` names a type this visitor should follow but does not list; `#[skip]` takes a field
 // out of the walk entirely.
 #[derive(Visiting)]
-#[subast(crate::Expr)]
+#[visiting(crate::Expr)]
 pub struct Stmt {
     pub e: Expr,
 }
@@ -123,7 +123,7 @@ name that instead:
 
 ```rust,ignore
 #[derive(Visiting)]
-#[visiting(::my_crate)]
+#[visiting(crate = ::my_crate)]
 pub enum Expr { Lit(u32) }
 ```
 

@@ -9,14 +9,14 @@ use visiting::Visiting;
 pub struct Qubit<S>(pub i64, pub PhantomData<S>);
 
 #[derive(Visiting)]
-#[subast(crate::Qubit)]
+#[visiting(crate::Qubit)]
 pub struct Brackets<T, S> {
     pub items: Vec<T>, // `T` is never a head — this field is a LEAF
     pub tag: PhantomData<S>,
 }
 
 #[derive(Visiting)]
-#[subast(crate::Qubit, crate::Brackets)]
+#[visiting(crate::Qubit, crate::Brackets)]
 pub struct Stmt<S> {
     pub b: Brackets<Qubit<S>, S>,
 }

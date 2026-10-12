@@ -5,11 +5,11 @@
 //! crate path through `$crate` so the code they emit resolves wherever it lands.
 
 use proc_macro::TokenStream as TokenStream1;
-use proc_macro_error3::{abort, proc_macro_error};
+use proc_macro_error3::proc_macro_error;
 use syn::*;
 
-mod ast;
 mod util;
+mod visiting;
 mod visitor;
 
 fn random() -> u64 {
@@ -19,33 +19,25 @@ fn random() -> u64 {
         .finish()
 }
 
-/// The crate path the generated code names, from `#[visiting(<path>)]` on the type, or `::visiting`.
+/// The crate path the generated code names, from `#[visiting(crate = <path>)]` on the type, or
+/// `::visiting`.
 ///
-/// A facade that re-exports this crate can be named instead — `#[visiting(::my_crate)]` makes the impls read
-/// `::my_crate::visit::..`, which is what a grammar depending only on that facade needs.
+/// A facade that re-exports this crate can be named instead — `#[visiting(crate = ::my_crate)]`
+/// makes the impls read `::my_crate::visit::..`, which is what a grammar depending only on that
+/// facade needs. Everything else in `#[visiting(..)]` is a type to follow; see `parse_subast`.
 fn crate_path(attrs: &[Attribute]) -> Path {
-    for attr in attrs {
-        if attr.path().is_ident("visiting") {
-            if let Meta::List(MetaList { tokens, .. }) = &attr.meta {
-                if let Ok(path) = parse2::<Path>(tokens.clone()) {
-                    return path;
-                }
-            }
-            abort!(attr, "should be formatted as #[visiting(<path>)]");
-        }
-    }
-    parse_quote!(::visiting)
+    visiting::parse_crate_path(attrs).unwrap_or_else(|| parse_quote!(::visiting))
 }
 
 /// Derive `Visiting` — mark a type as a node, and record the metadata a visitor walks it by.
 ///
-/// See `visiting::Visiting` for the attributes (`#[subast]`, `#[seq]`, `#[opt]`, `#[skip]`).
+/// See `visiting::Visiting` for the attributes (`#[visiting]`, `#[seq]`, `#[opt]`, `#[skip]`).
 #[proc_macro_error]
-#[proc_macro_derive(Visiting, attributes(visiting, subast, seq, opt, skip))]
-pub fn ast_derive(input: TokenStream1) -> TokenStream1 {
+#[proc_macro_derive(Visiting, attributes(visiting, seq, opt, skip))]
+pub fn visiting_derive(input: TokenStream1) -> TokenStream1 {
     let input: DeriveInput = parse_macro_input!(input);
     let path = crate_path(&input.attrs);
-    ast::derive_ast(&input, random(), &path).into()
+    visiting::derive_visiting(&input, random(), &path).into()
 }
 
 #[proc_macro_error]

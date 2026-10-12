@@ -9,7 +9,7 @@ use syn::*;
 use template_quote::quote;
 use type_leak::Leaker;
 
-/// One `#[subast(..)]` entry: a path to a sub-AST type, optionally aliased (`b::Foo as BFoo`). The
+/// One `#[visiting(..)]` entry: a path to a sub-AST type, optionally aliased (`b::Foo as BFoo`). The
 /// `matchkey` (the alias, or the path's last segment) is the ident a field head is matched against;
 /// `path` is the resolvable path used to fetch that sub-AST's metadata macro / as a drill scrutinee.
 pub(crate) struct SubastEntry {
@@ -39,9 +39,9 @@ impl SubastEntry {
     }
 }
 
-/// Render a `#[subast(..)]` allowlist as the `@subast { path as key, … }` token list carried in a
+/// Render a `#[visiting(..)]` allowlist as the `@subast { path as key, … }` token list carried in a
 /// metadata macro: each entry's path is `$crate`-rooted (so it resolves downstream, exactly as
-/// `derive_ast`) and paired with its matchkey.
+/// `derive_visiting`) and paired with its matchkey.
 pub(crate) fn subast_tokens(entries: &[SubastEntry]) -> Vec<TokenStream> {
     entries
         .iter()
@@ -71,7 +71,7 @@ pub(crate) fn crate_rooted_tokens(path: &Path) -> TokenStream {
     }
 }
 
-/// Whether a `#[subast(..)]` path is **fully qualified (rooted)** — so it still resolves when this
+/// Whether a `#[visiting(..)]` path is **fully qualified (rooted)** — so it still resolves when this
 /// type's metadata macro is expanded elsewhere (a sibling module, or a downstream crate building a
 /// visitor that drills through it). Rooted forms: a leading `::` (absolute), `crate::…` (re-rooted to
 /// `$crate::…` for downstream), or an external-crate path (`other_crate::…`) — i.e. a multi-segment path
@@ -87,26 +87,77 @@ pub(crate) fn subast_path_is_rooted(path: &Path) -> bool {
     }
 }
 
-/// Collect the `#[subast(..)]` allowlist from the type's attributes. Each path must be fully qualified
+/// One item inside `#[visiting(..)]`: either `crate = <path>`, which names the facade crate the
+/// generated code should reach this crate through, or a path to a type the walk should follow.
+pub(crate) enum VisitingItem {
+    Crate(Path),
+    Follow(SubastEntry),
+}
+
+impl Parse for VisitingItem {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        if input.peek(Token![crate]) && input.peek2(Token![=]) {
+            input.parse::<Token![crate]>()?;
+            input.parse::<Token![=]>()?;
+            return Ok(VisitingItem::Crate(input.parse()?));
+        }
+        Ok(VisitingItem::Follow(input.parse()?))
+    }
+}
+
+/// The facade crate from `#[visiting(crate = <path>)]`, if any.
+pub(crate) fn parse_crate_path(attrs: &[Attribute]) -> Option<Path> {
+    for attr in attrs {
+        if !attr.path().is_ident("visiting") {
+            continue;
+        }
+        if let Meta::List(ml) = &attr.meta {
+            if let Ok(items) =
+                Punctuated::<VisitingItem, Token![,]>::parse_terminated.parse2(ml.tokens.clone())
+            {
+                for i in items {
+                    if let VisitingItem::Crate(p) = i {
+                        return Some(p);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Collect the types to follow from `#[visiting(..)]` from the type's attributes. Each path must be fully qualified
 /// (see `subast_path_is_rooted`). Two entries resolving to the same `matchkey` is an error (a bare field
 /// head can't disambiguate them — alias one).
 pub(crate) fn parse_subast(attrs: &[Attribute]) -> Vec<SubastEntry> {
     let mut entries = Vec::new();
     for attr in attrs {
-        if !attr.path().is_ident("subast") {
+        if !attr.path().is_ident("visiting") {
             continue;
         }
         let list = match &attr.meta {
             Meta::List(ml) => ml.tokens.clone(),
             _ => {
-                emit_error!(attr, "`#[subast(..)]` takes a parenthesized list of paths");
+                emit_error!(
+                    attr,
+                    "`#[visiting(..)]` takes a parenthesized list of paths"
+                );
                 continue;
             }
         };
-        match Punctuated::<SubastEntry, Token![,]>::parse_terminated.parse2(list) {
-            Ok(parsed) => entries.extend(parsed),
-            Err(e) => emit_error!(e.span(), "invalid `#[subast(..)]`: {}", e),
-        }
+        // `crate = <path>` names the facade crate and is read by `crate_path`; everything else is a
+        // type to follow. Dropping the `crate` item here keeps one attribute doing both jobs.
+        let items = match Punctuated::<VisitingItem, Token![,]>::parse_terminated.parse2(list) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                emit_error!(e.span(), "invalid `#[visiting(..)]`: {}", e);
+                continue;
+            }
+        };
+        entries.extend(items.into_iter().filter_map(|i| match i {
+            VisitingItem::Crate(_) => None,
+            VisitingItem::Follow(e) => Some(e),
+        }));
     }
     // Every entry must be rooted, whatever it names. The path has two jobs: as a *match key* only the
     // last segment is compared, so the root is irrelevant there — but as a *fetch target* for a type
@@ -125,7 +176,7 @@ pub(crate) fn parse_subast(attrs: &[Attribute]) -> Vec<SubastEntry> {
             let p = &e.path;
             emit_error!(
                 e.path,
-                "`#[subast(..)]` path `{}` is not fully qualified. Use a `crate`-rooted path \
+                "`#[visiting(..)]` path `{}` is not fully qualified. Use a `crate`-rooted path \
                  (`crate::path::to::{}`) — or an external-crate path (`other_crate::path::{}`) for a \
                  type from another crate. A bare ident or a `self::`/`super::`-relative path resolves \
                  in the consumer's scope (where the metadata macro is expanded), not here.",
@@ -149,7 +200,7 @@ pub(crate) fn parse_subast(attrs: &[Attribute]) -> Vec<SubastEntry> {
             }
             emit_error!(
                 e.path,
-                "`#[subast(..)]` path `{}` carries generic arguments; a subast entry names a type by \
+                "`#[visiting(..)]` path `{}` carries generic arguments; a subast entry names a type by \
                  path only (it is used as a metadata-macro fetch target and a match scrutinee, where \
                  `<..>` is illegal). Drop the arguments — write `{}`.",
                 quote!(#p).to_string().replace(' ', ""),
@@ -163,7 +214,7 @@ pub(crate) fn parse_subast(attrs: &[Attribute]) -> Vec<SubastEntry> {
         if seen.insert(key.clone(), ()).is_some() {
             emit_error!(
                 e.path,
-                "two `#[subast(..)]` entries share the last segment `{}`; alias one (`path as Alias`)",
+                "two `#[visiting(..)]` entries share the last segment `{}`; alias one (`path as Alias`)",
                 key
             );
         }
@@ -245,7 +296,7 @@ fn build_referrer(input: &DeriveInput) -> Option<type_leak::Referrer> {
 }
 
 /// Every ident that appears as a path segment anywhere inside a field type (so `Vec<Box<Stmt<S>>>`
-/// contributes `Vec`, `Box`, `Stmt`, `S`). Used only to warn about `#[subast]` entries that match no
+/// contributes `Vec`, `Box`, `Stmt`, `S`). Used only to warn about `#[visiting]` entries that match no
 /// field — an over-approximation, so it never false-warns.
 fn field_head_idents(input: &DeriveInput) -> HashSet<String> {
     let mut out = HashSet::new();
@@ -268,12 +319,12 @@ fn for_each_field_type_of(data: &Data, f: &mut dyn FnMut(&Type)) {
 /// * `impl Visiting for T<..> {}` (the empty marker trait from `visit`),
 /// * one `impl Repeater<N> for T<..>` per context-dependent field type, so it can be named
 ///   portably as `<T<..> as Repeater<N>>::Type` (external-metadata fallback; the visitor/drill path
-///   uses `#[subast]`-resolved paths),
+///   uses `#[visiting]`-resolved paths),
 /// * a `#[macro_export]` callback metadata `macro_rules!` carrying a cleaned copy of the definition
-///   plus the `#[subast]` allowlist, and
+///   plus the `#[visiting]` allowlist, and
 /// * a macro-namespace re-export under the type's own name so a generated visitor can reach it as
 ///   `path::to::T! { .. }`.
-pub fn derive_ast(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStream {
+pub fn derive_visiting(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStream {
     let ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
@@ -295,7 +346,7 @@ pub fn derive_ast(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStream {
         if !field_heads.contains(&key.to_string()) {
             emit_warning!(
                 e.path,
-                "`#[subast]` entry `{}` matches no field of `{}`",
+                "`#[visiting]` entry `{}` matches no field of `{}`",
                 key,
                 ident
             );
@@ -336,11 +387,11 @@ pub fn derive_ast(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStream {
         quote!()
     };
 
-    // Every `#[subast]` entry must itself be a node. Without this the omission surfaces only when a
+    // Every `#[visiting]` entry must itself be a node. Without this the omission surfaces only when a
     // `define_visit!` tries to expand the entry's metadata macro, as `cannot find `X` in `$crate`` — a
     // message about a macro the user never wrote, in a module far from the attribute at fault.
     //
-    // The bound names the matching FIELD's type, not the `#[subast]` path: an entry is written bare
+    // The bound names the matching FIELD's type, not the `#[visiting]` path: an entry is written bare
     // (`crate::Expr`, a matchkey), while the field spells the arguments (`Expr<S>`). Those live in
     // the node's own generics, so the check is a generic fn that is never called.
     let subast_are_nodes: Vec<TokenStream> = subast
@@ -387,7 +438,7 @@ pub fn derive_ast(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStream {
 
         #repeater_items
 
-        // The cleaned definition / `#[subast]` paths embedded below may contain `crate::`-rooted paths
+        // The cleaned definition / `#[visiting]` paths embedded below may contain `crate::`-rooted paths
         // the user wrote; those resolve in *this* (defining) crate by design (downstream-portable paths
         // are `$crate`-rooted via `crate_rooted_tokens`). Suppress clippy's `crate_in_macro_def` for the
         // generated callback macro so it never surfaces in a consumer's lint output.
@@ -450,7 +501,7 @@ fn check_ambiguous_last_idents(input: &DeriveInput) {
             spellings.len(),
             last,
             names.join(", ");
-            help = "give one a distinct name, or name it through a `#[subast(<path> as Alias)]` \
+            help = "give one a distinct name, or name it through a `#[visiting(<path> as Alias)]` \
                     entry and write that alias in the field"
         );
     }

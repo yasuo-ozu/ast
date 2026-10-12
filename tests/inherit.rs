@@ -19,7 +19,7 @@ mod ast {
 
     /// Reaches `Leaf` four ways at once — plain, in a `Vec`, through a `Box`, and inside a tuple.
     #[derive(Debug, Visiting)]
-    #[subast(crate::ast::Leaf)]
+    #[visiting(crate::ast::Leaf)]
     pub struct Mid {
         pub direct: Leaf,
         pub many: Vec<Leaf>,
@@ -28,7 +28,7 @@ mod ast {
     }
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::ast::Mid)]
+    #[visiting(crate::ast::Mid)]
     pub struct Top {
         pub mids: Vec<Mid>,
     }

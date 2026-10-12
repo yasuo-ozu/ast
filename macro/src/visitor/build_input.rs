@@ -1,6 +1,6 @@
 use super::*;
 
-/// A fetched AST type: the path it was fetched by, its (cleaned) definition, and its `#[subast]`.
+/// A fetched AST type: the path it was fetched by, its (cleaned) definition, and its `#[visiting]`.
 pub(crate) struct DoneType {
     pub(crate) path: Path,
     pub(crate) def: Item,
@@ -16,7 +16,7 @@ pub(crate) struct BuildInput {
     pub(crate) nonce: TokenStream,
     pub(crate) visited: Vec<Path>,
     /// Types inherited from the base, as `path as matchkey` rather than bare idents, so a field
-    /// holding an inherited type is followed without a `#[subast]` entry repeating what the base
+    /// holding an inherited type is followed without a `#[visiting]` entry repeating what the base
     /// already knows. Requalified against the base path on arrival, so the paths stay resolvable
     /// through any number of generations.
     pub(crate) inherited: Vec<SubEntry>,

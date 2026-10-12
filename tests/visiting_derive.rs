@@ -5,21 +5,21 @@ use core::marker::PhantomData;
 use visiting::Visiting;
 
 #[derive(Visiting)]
-#[subast(crate::Stmt)]
+#[visiting(crate::Stmt)]
 pub enum Expr<S> {
     Stmt(Box<Stmt<S>>),
     Other(PhantomData<S>),
 }
 
 #[derive(Visiting)]
-#[subast(crate::Expr)]
+#[visiting(crate::Expr)]
 pub enum Stmt<S> {
     Expr(Box<Expr<S>>),
     Other(PhantomData<S>),
 }
 
 #[derive(Visiting)]
-#[subast(crate::Expr)]
+#[visiting(crate::Expr)]
 pub struct Wrap<S> {
     pub inner: Expr<S>,
 }
@@ -27,10 +27,10 @@ pub struct Wrap<S> {
 #[derive(Visiting)]
 pub struct Inner<S>(pub PhantomData<S>);
 
-// `#[subast(..)]` records this type's sub-AST children + their resolvable paths. The path must be
+// `#[visiting(..)]` records this type's sub-AST children + their resolvable paths. The path must be
 // fully qualified (`crate`-rooted here), so it resolves wherever the metadata macro is expanded.
 #[derive(Visiting)]
-#[subast(crate::Inner)]
+#[visiting(crate::Inner)]
 pub struct Outer<S> {
     pub child: Inner<S>,
 }
@@ -80,7 +80,7 @@ fn metadata_macro_round_trips_definition() {
 
 #[test]
 fn subast_allowlist_round_trips() {
-    // The metadata macro carries the `#[subast]` allowlist as `<path> as <matchkey>` entries. The
+    // The metadata macro carries the `#[visiting]` allowlist as `<path> as <matchkey>` entries. The
     // callback matches a single `$path:path as $key:ident`, proving both the format and that the
     // path resolves to a real type.
     macro_rules! check {

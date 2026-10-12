@@ -153,9 +153,9 @@ pub(crate) fn walk_tag_phantom(g_params: &[GenericParam]) -> TokenStream {
     quote!( ::core::marker::PhantomData<( #(#parts,)* )> )
 }
 
-/// A drilled intermediate — reached through `#[subast]` but not listed in `define_visit!(..)`, so it has
+/// A drilled intermediate — reached through `#[visiting]` but not listed in `define_visit!(..)`, so it has
 /// no visit method — gets a `Walk` impl of its own instead of being destructured inline at every use
-/// site. Unconditional, like a node's, so a `#[subast]` cycle through one terminates.
+/// site. Unconditional, like a node's, so a `#[visiting]` cycle through one terminates.
 fn intermediate_impls(
     st: &BuildInput,
     m: &Model,

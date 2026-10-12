@@ -9,7 +9,7 @@ pub enum Leaf<S> {
 }
 
 #[derive(Visiting)]
-#[subast(crate::Leaf)]
+#[visiting(crate::Leaf)]
 pub struct Wrap<S> {
     #[seq]
     pub items: [Leaf<S>; 3],

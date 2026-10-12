@@ -13,7 +13,7 @@ mod other {
 }
 
 #[derive(Visiting)]
-#[subast()]
+#[visiting()]
 pub enum Expr<S> {
     ToStmt(Box<Stmt<S>>),
     Foreign(crate::other::Stmt),
@@ -21,7 +21,7 @@ pub enum Expr<S> {
 }
 
 #[derive(Visiting)]
-#[subast()]
+#[visiting()]
 pub enum Stmt<S> {
     Back(Box<Expr<S>>),
     Nop(PhantomData<S>),

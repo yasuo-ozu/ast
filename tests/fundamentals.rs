@@ -7,14 +7,14 @@ mod basic {
     use visiting::Visiting;
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::basic::Stmt)]
+    #[visiting(crate::basic::Stmt)]
     pub enum Expr<S> {
         Stmt(Box<Stmt<S>>),
         Other(PhantomData<S>),
     }
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::basic::Expr)]
+    #[visiting(crate::basic::Expr)]
     pub enum Stmt<S> {
         Expr(Box<Expr<S>>),
         Other(PhantomData<S>),
@@ -199,7 +199,7 @@ mod hygiene {
     }
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::hygiene::Leaf)]
+    #[visiting(crate::hygiene::Leaf)]
     pub struct Names<S> {
         pub this: Box<Leaf<S>>,
         pub i: Leaf<S>,
@@ -250,7 +250,7 @@ mod local_types {
 
         // `Local` is intentionally a leaf; `Rec` is followed via implicit self-recursion.
         #[derive(Debug, Visiting)]
-        #[subast()]
+        #[visiting()]
         pub enum Expr<S> {
             Lit(Local, PhantomData<S>),
             Rec(Box<Expr<S>>),
@@ -282,9 +282,9 @@ mod where_clause {
     impl Bound for () {}
 
     // The bound is written as a resolvable path because the generated items live in `mod v` — the
-    // same canonical-path requirement the `#[subast]` paths have.
+    // same canonical-path requirement the `#[visiting]` paths have.
     #[derive(Visiting)]
-    #[subast()]
+    #[visiting()]
     pub enum Expr<S>
     where
         S: crate::where_clause::Bound,
@@ -312,7 +312,7 @@ mod generics {
     use visiting::Visiting;
 
     #[derive(Visiting)]
-    #[subast(crate::generics::BinOp)]
+    #[visiting(crate::generics::BinOp)]
     pub enum Expr<S, Tokens> {
         Bin(Box<Expr<S, Tokens>>, BinOp<S>, Box<Expr<S, Tokens>>),
         Lit(i64, PhantomData<(S, Tokens)>),
@@ -357,7 +357,7 @@ mod union_where_unshared {
     pub trait Bound {}
 
     #[derive(Visiting)]
-    #[subast()]
+    #[visiting()]
     pub struct Bounded<S>
     where
         S: Bound,
@@ -366,7 +366,7 @@ mod union_where_unshared {
     }
 
     #[derive(Visiting)]
-    #[subast()]
+    #[visiting()]
     pub struct Plain {
         pub _x: u8,
     }

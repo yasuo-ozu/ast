@@ -13,17 +13,17 @@ pub enum Type<S> {
     U(PhantomData<S>),
 }
 #[derive(Visiting)]
-#[subast(crate::Type)]
+#[visiting(crate::Type)]
 pub struct Expr<S> {
     pub t: Type<S>,
 }
 #[derive(Visiting)]
-#[subast(crate::Expr)]
+#[visiting(crate::Expr)]
 pub struct Stmt<S> {
     pub e: Expr<S>,
 }
 #[derive(Visiting)]
-#[subast(crate::Stmt)]
+#[visiting(crate::Stmt)]
 pub struct Item<S> {
     pub s: Stmt<S>,
 }

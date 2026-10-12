@@ -11,19 +11,19 @@ pub enum Type<S> {
 }
 
 #[derive(Visiting)]
-#[subast(crate::Type)]
+#[visiting(crate::Type)]
 pub enum Expr<S> {
     T(Box<Type<S>>),
 }
 
 #[derive(Visiting)]
-#[subast(crate::Expr)]
+#[visiting(crate::Expr)]
 pub enum Stmt<S> {
     E(Box<Expr<S>>),
 }
 
 #[derive(Visiting)]
-#[subast(crate::Stmt)]
+#[visiting(crate::Stmt)]
 pub enum Item<S> {
     S(Box<Stmt<S>>),
 }

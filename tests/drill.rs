@@ -13,11 +13,11 @@ mod basic {
     }
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::basic::Type)]
+    #[visiting(crate::basic::Type)]
     pub struct Cast<S>(pub Type<S>);
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::basic::Cast)]
+    #[visiting(crate::basic::Cast)]
     pub enum Expr<S> {
         Cast(Cast<S>),
         Lit(PhantomData<S>),
@@ -90,15 +90,15 @@ mod chain {
     }
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::chain::Type)]
+    #[visiting(crate::chain::Type)]
     pub struct Cast<S>(pub Type<S>);
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::chain::Cast)]
+    #[visiting(crate::chain::Cast)]
     pub struct Wrap<S>(pub Cast<S>);
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::chain::Wrap)]
+    #[visiting(crate::chain::Wrap)]
     pub enum Expr<S> {
         W(Wrap<S>),
         Lit(PhantomData<S>),
@@ -122,11 +122,11 @@ mod chain {
     }
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::chain::Leaf)]
+    #[visiting(crate::chain::Leaf)]
     pub struct Item<S>(pub Leaf<S>);
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::chain::Item)]
+    #[visiting(crate::chain::Item)]
     pub struct Block<S> {
         pub items: Vec<Item<S>>,
         pub opt: Option<Item<S>>,
@@ -155,7 +155,7 @@ mod chain {
     pub struct Dead<S>(pub i64, pub PhantomData<S>);
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::chain::Dead)]
+    #[visiting(crate::chain::Dead)]
     pub enum ExprD<S> {
         D(Dead<S>),
         Lit(PhantomData<S>),
@@ -177,7 +177,7 @@ mod chain {
     }
 }
 
-// Regression fixes: aliased #[subast] on a visited type, a user type named `Option`, Box<Option<T>>.
+// Regression fixes: aliased #[visiting] on a visited type, a user type named `Option`, Box<Option<T>>.
 mod fixes {
     use core::marker::PhantomData;
     use visiting::Visiting;
@@ -195,7 +195,7 @@ mod fixes {
     use other::Real as Aliased;
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::fixes::other::Real as Aliased)]
+    #[visiting(crate::fixes::other::Real as Aliased)]
     pub enum Expr<S> {
         R(Aliased<S>),
         Lit(PhantomData<S>),
@@ -226,12 +226,12 @@ mod fixes {
         use visiting::Visiting;
         // A user type whose name collides with the `Option` container keyword.
         #[derive(Debug, Visiting)]
-        #[subast(crate::fixes::Leaf)]
+        #[visiting(crate::fixes::Leaf)]
         pub struct Option<S>(pub Leaf<S>);
     }
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::fixes::weird::Option)]
+    #[visiting(crate::fixes::weird::Option)]
     pub enum Outer<S> {
         O(weird::Option<S>),
         Lit(PhantomData<S>),
@@ -260,7 +260,7 @@ mod fixes {
     }
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::fixes::LeafB)]
+    #[visiting(crate::fixes::LeafB)]
     pub struct Holder<S> {
         pub boxed_opt: Box<Option<LeafB<S>>>,
     }
@@ -317,14 +317,14 @@ mod paths {
     pub mod a {
         use visiting::Visiting;
         #[derive(Debug, Visiting)]
-        #[subast(crate::paths::Type)]
+        #[visiting(crate::paths::Type)]
         pub struct Cast<S>(pub crate::paths::Type<S>);
     }
 
     pub mod b {
         use visiting::Visiting;
         #[derive(Debug, Visiting)]
-        #[subast(crate::paths::Type)]
+        #[visiting(crate::paths::Type)]
         pub struct Cast<S>(pub crate::paths::Type<S>);
     }
 
@@ -332,7 +332,7 @@ mod paths {
     use b::Cast as BCast;
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::paths::a::Cast, crate::paths::b::Cast as BCast)]
+    #[visiting(crate::paths::a::Cast, crate::paths::b::Cast as BCast)]
     pub enum Expr<S> {
         A(Cast<S>),
         B(BCast<S>),

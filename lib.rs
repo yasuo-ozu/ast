@@ -53,7 +53,7 @@ pub mod visit {
 ///
 /// ```ignore
 /// #[derive(Visiting)]
-/// #[subast(crate::other::Node as OtherNode)]
+/// #[visiting(crate::other::Node as OtherNode)]
 /// pub struct Wrapper {
 ///     inner: OtherNode,
 /// }
@@ -63,20 +63,20 @@ pub mod visit {
 ///
 /// | attribute | on | meaning |
 /// |---|---|---|
-/// | `#[subast(path, ..)]` | the type | types this node reaches that `define_visit!(..)` does **not** list, so the walk can pass through them. A listed type needs no entry. |
+/// | `#[visiting(path, ..)]` | the type | types this node reaches that `define_visit!(..)` does **not** list, so the walk can pass through them. A listed type needs no entry. |
 /// | `#[seq]` / `#[opt]` | a field | reach the parent slot through a [`SeqView`] or [`OptView`]. Plain `Vec<T>` / `Option<T>` only. |
 /// | `#[skip]` | a field | never walk into this field, whatever its type. An error together with `#[seq]` or `#[opt]`. |
 ///
 /// Take a field's type and remove wrappers like `Box`, `Vec` and `Option`. What is left is the
 /// **head**. The walk goes into a field when the visitor knows its head. It knows a type if you
-/// listed it in `define_visit!(..)`, or if it comes from a base visitor. Those need no `#[subast(..)]`
+/// listed it in `define_visit!(..)`, or if it comes from a base visitor. Those need no `#[visiting(..)]`
 /// entry. That list is only for types the walk passes *through* on the way to a known one.
 ///
-/// A `#[subast(..)]` path must start at a crate: `crate::path::to::Type`, or
+/// A `#[visiting(..)]` path must start at a crate: `crate::path::to::Type`, or
 /// `other_crate::path::Type` for a type in another crate. A plain name, or a `self::`/`super::`
 /// path, is an error. Here is why. This derive puts the path inside a macro. That macro runs later,
 /// in the module where the visitor lives. A short path would mean something else there.
-/// `define_visit!(..)` has no such rule. Only `#[subast(..)]` does.
+/// `define_visit!(..)` has no such rule. Only `#[visiting(..)]` does.
 ///
 /// A `#[seq]` or `#[opt]` field must be a plain `Vec<T>` or `Option<T>`. A wrapped one, like
 /// `Option<Box<T>>`, cannot be edited in place. The macro tells you so, instead of building a view
@@ -173,7 +173,7 @@ pub use visiting_macro::Visiting;
 ///     use visiting::Visiting;
 ///
 ///     #[derive(Visiting)]
-///     #[subast(crate::grammar::Expr)]
+///     #[visiting(crate::grammar::Expr)]
 ///     pub enum Expr { Lit(u32), Neg(Box<Expr>), Many(#[seq] Vec<Expr>) }
 ///
 ///     pub mod visit { visiting::define_visit!(super::Expr); }
@@ -328,7 +328,7 @@ pub use visiting_macro::Visiting;
 ///
 /// A few things follow from that:
 ///
-/// * A field holding one of the base's types needs no `#[subast(..)]` entry. `ext` asks the base
+/// * A field holding one of the base's types needs no `#[visiting(..)]` entry. `ext` asks the base
 ///   for its list, and those nodes reach the base's `visit_*` through the supertrait.
 /// * Chains can be as long as you like: `base => mid => new`.
 /// * The new visitor may take more generic parameters than its base.
@@ -397,7 +397,7 @@ macro_rules! define_visit {
     diagnostic::on_unimplemented(
         message = "`{Self}` is not an AST node",
         label = "not an AST node",
-        note = "add `#[derive(Visiting)]` to `{Self}`; every `#[subast(..)]` entry has to be one"
+        note = "add `#[derive(Visiting)]` to `{Self}`; every `#[visiting(..)]` entry has to be one"
     )
 )]
 pub trait Visiting {}
@@ -871,7 +871,7 @@ pub mod walk {
         diagnostic::on_unimplemented(
             message = "`{Self}` cannot be walked at `{H}`",
             label = "this field's shape has no `Walk` impl",
-            note = "a visited node needs `#[derive(Visiting)]` and an entry in the owning type's `#[subast(..)]`; \
+            note = "a visited node needs `#[derive(Visiting)]` and an entry in the owning type's `#[visiting(..)]`; \
                 a container of one needs a `Walk` impl, which `visiting::visit` has for `Vec`, `VecDeque`, \
                 `Option`, `Box`, maps, slices, arrays and tuples, and which a crate can add for a \
                 container of its own"

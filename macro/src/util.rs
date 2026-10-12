@@ -227,7 +227,7 @@ pub(crate) enum Head {
         /// visited `crate::ast::Stmt` — `peel` matches last segments, which alone cannot.
         wrote: Path,
         /// The head segment's generic arguments as written in the field (`<S>` in `Expr<S>`), so a
-        /// caller can rebuild the head type against its `#[subast]` path.
+        /// caller can rebuild the head type against its `#[visiting]` path.
         args: syn::PathArguments,
     },
     Tuple(Vec<Type>),
@@ -250,7 +250,7 @@ fn prepend(kind: LayerKind, mut inner: Peeled) -> Peeled {
 }
 
 /// Peel a field type to its head + the wrapper levels around it, **without matching any container type
-/// name**. A path whose last segment is in `user_types` (a type's `#[subast]` matchkeys + its own ident)
+/// name**. A path whose last segment is in `user_types` (a type's `#[visiting]` matchkeys + its own ident)
 /// is the head; any *other* path is a `View` wrapper level iff a head is reachable through one of its type
 /// arguments (the first such, scanned in order — so a map's VALUE slot is found once its KEY turns out to
 /// hold no head) — so `Vec`/`Option`/`Box`/`Punctuated`/`HashMap` and user wrappers are handled uniformly,
@@ -437,13 +437,13 @@ impl Side {
 /// Whether the path a field *wrote* can denote the type at `visited` — i.e. it is a bare ident, or
 /// its segments are a suffix of the visited path's.
 ///
-/// `peel` recognises a head by last segment alone, which is enough while `#[subast]` supplies the
+/// `peel` recognises a head by last segment alone, which is enough while `#[visiting]` supplies the
 /// authoritative path. Resolving a head against the `define_visit!(..)` set instead has no such anchor, so
 /// `super::other::Stmt` would be walked as `crate::ast::Stmt` — a real bug this already has a
 /// regression test for. Declining here leaves such a field a leaf, which is what it was.
 ///
 /// Conservative in one direction only: a path that names the visited type by a route this cannot see
-/// through (`super::ast::Stmt` from a sibling module) is declined too, and needs a `#[subast]` entry
+/// through (`super::ast::Stmt` from a sibling module) is declined too, and needs a `#[visiting]` entry
 /// as it does today.
 pub(crate) fn path_may_denote(wrote: &Path, visited: &Path, owner: &Path) -> bool {
     let w: Vec<String> = wrote.segments.iter().map(|s| s.ident.to_string()).collect();

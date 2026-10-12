@@ -15,7 +15,7 @@ mod ast {
     }
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::ast::Node)]
+    #[visiting(crate::ast::Node)]
     pub struct Tree {
         pub nodes: Vec<Node>,
     }

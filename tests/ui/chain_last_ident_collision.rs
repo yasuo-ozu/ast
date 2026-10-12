@@ -1,5 +1,5 @@
 //! Two different types whose paths end in the same ident, each declared by a different visitor in
-//! one inheritance chain. Neither the per-`define_visit!` check nor the `#[subast]` ones see them
+//! one inheritance chain. Neither the per-`define_visit!` check nor the `#[visiting]` ones see them
 //! together, so this is where the chain-wide check has to catch it.
 use core::marker::PhantomData;
 use visiting::Visiting;

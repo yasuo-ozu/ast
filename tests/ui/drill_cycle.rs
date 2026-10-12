@@ -6,15 +6,15 @@ use core::marker::PhantomData;
 use visiting::Visiting;
 
 #[derive(Visiting)]
-#[subast(crate::B)]
+#[visiting(crate::B)]
 pub struct A<S>(pub Box<B<S>>, pub PhantomData<S>);
 
 #[derive(Visiting)]
-#[subast(crate::A)]
+#[visiting(crate::A)]
 pub struct B<S>(pub Box<A<S>>, pub PhantomData<S>);
 
 #[derive(Visiting)]
-#[subast(crate::A)]
+#[visiting(crate::A)]
 pub enum Expr<S> {
     Wrap(A<S>),
     Lit(PhantomData<S>),

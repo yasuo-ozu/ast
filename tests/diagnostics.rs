@@ -29,10 +29,10 @@ fn diagnostics() {
     t.compile_fail("tests/ui/glob_import_hides_chain.rs");
     // The same type listed twice — one clean error, not an `E0428` cascade on generated names.
     t.compile_fail("tests/ui/visited_listed_twice.rs");
-    // A `#[subast]` entry that is not itself a node — caught at the derive, by the field's type.
+    // A `#[visiting]` entry that is not itself a node — caught at the derive, by the field's type.
     t.compile_fail("tests/ui/subast_entry_not_a_node.rs");
     // `#[derive(Visiting)]` on a union.
-    t.compile_fail("tests/ui/derive_ast_on_a_union.rs");
+    t.compile_fail("tests/ui/derive_visiting_on_a_union.rs");
     // `impl_chain!` given a method no ancestor declares.
     t.compile_fail("tests/ui/impl_chain_unknown_method.rs");
     // Marker on a non-viewable / container-less / non-visited field → clean abort, not a cryptic trait error.

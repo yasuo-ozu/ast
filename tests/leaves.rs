@@ -1,4 +1,4 @@
-//! The field-level markers and the crate-path override: `#[skip]`, and `#[visiting(<path>)]` for a
+//! The field-level markers and the crate-path override: `#[skip]`, and `#[visiting(crate = <path>)]` for a
 //! grammar that reaches this crate through a facade.
 #![allow(dead_code)]
 
@@ -10,7 +10,7 @@ mod skip {
     pub struct Leaf(pub u32);
 
     #[derive(Visiting)]
-    #[subast(crate::skip::Leaf)]
+    #[visiting(crate::skip::Leaf)]
     pub struct Node {
         pub a: Leaf,
         #[skip]
@@ -46,7 +46,7 @@ mod skip {
     }
 }
 
-// `#[visiting(<path>)]` makes the derive name a facade instead of `::visiting`, so a grammar depending only
+// `#[visiting(crate = <path>)]` makes the derive name a facade instead of `::visiting`, so a grammar depending only
 // on that facade needs no direct dependency on this crate. The module below stands in for one.
 mod facade {
     pub mod my_crate {
@@ -61,7 +61,7 @@ mod facade {
 
     #[derive(Visiting)]
     #[visiting(crate::facade::my_crate)]
-    #[subast(crate::facade::Leaf)]
+    #[visiting(crate::facade::Leaf)]
     pub struct Node {
         pub leaves: Vec<Leaf>,
     }

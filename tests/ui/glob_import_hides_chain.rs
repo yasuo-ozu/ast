@@ -11,7 +11,7 @@ pub enum Item<S> {
 }
 
 #[derive(Visiting)]
-#[subast(crate::Item)]
+#[visiting(crate::Item)]
 pub struct List<S> {
     pub items: Vec<Item<S>>,
 }

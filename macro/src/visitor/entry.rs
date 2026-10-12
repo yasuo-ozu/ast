@@ -126,7 +126,7 @@ pub fn entry(input: TokenStream, nonce: u64) -> TokenStream {
 
 // Subast records carried through the ping-pong.
 
-/// One `<path> as <matchkey>` entry from a type's `#[subast]`, as carried in the metadata. `key` is
+/// One `<path> as <matchkey>` entry from a type's `#[visiting]`, as carried in the metadata. `key` is
 /// the ident a (container-peeled) field head is matched against; `path` is the resolvable path used
 /// to fetch that sub-AST's metadata macro and as a drill match-scrutinee.
 pub(crate) struct SubEntry {

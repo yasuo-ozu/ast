@@ -21,7 +21,7 @@ mod ast {
     }
 
     #[derive(Debug, Visiting)]
-    #[subast(crate::ast::Line)]
+    #[visiting(crate::ast::Line)]
     pub struct Page {
         pub placed: Vec<(Length, Line)>,
         pub header: Option<Box<Line>>,
@@ -100,7 +100,7 @@ mod collides {
     /// Two shapes of one arity, which an earlier design could not give separate impls: they are the
     /// same tuple impl at `(Here, Here)` and `(Skip, Here)`.
     #[derive(Debug, Visiting)]
-    #[subast(crate::collides::Node)]
+    #[visiting(crate::collides::Node)]
     pub struct Holder {
         pub both: Vec<(Node, Node)>,
         pub tagged: Vec<(Mark, Node)>,

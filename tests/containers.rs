@@ -8,14 +8,14 @@ mod nested {
     use visiting::Visiting;
 
     #[derive(Visiting)]
-    #[subast()]
+    #[visiting()]
     pub struct Leaf<S> {
         pub _p: PhantomData<S>,
         pub value: i64,
     }
 
     #[derive(Visiting)]
-    #[subast(crate::nested::Leaf)]
+    #[visiting(crate::nested::Leaf)]
     pub struct Holder<S> {
         pub vo: Vec<Option<Leaf<S>>>,
         pub ov: Option<Vec<Leaf<S>>>,
@@ -78,13 +78,13 @@ mod container_of_tuple {
     use visiting::Visiting;
 
     #[derive(Visiting)]
-    #[subast()]
+    #[visiting()]
     pub struct Leaf<S> {
         pub _p: PhantomData<S>,
     }
 
     #[derive(Visiting)]
-    #[subast(crate::container_of_tuple::Leaf)]
+    #[visiting(crate::container_of_tuple::Leaf)]
     pub struct Holder<S> {
         pub top: (Leaf<S>, Leaf<S>),
         pub vec_of_tuples: Vec<(Leaf<S>, Leaf<S>)>,
@@ -144,7 +144,7 @@ mod tuple_field {
     }
 
     #[derive(Visiting)]
-    #[subast(crate::tuple_field::Ty)]
+    #[visiting(crate::tuple_field::Ty)]
     pub enum Expr<S> {
         Pair((Ty<S>, Ty<S>)),
         // Nested tuple with a leaf element exercises recursion + `_` binding for non-followed members.
@@ -372,7 +372,7 @@ mod own_container {
     pub struct Item(pub u32);
 
     #[derive(Visiting)]
-    #[subast(crate::own_container::Item)]
+    #[visiting(crate::own_container::Item)]
     pub struct Doc {
         #[seq]
         pub items: Punctuated<Item, char>,
@@ -519,7 +519,7 @@ mod own_map {
     pub struct Item(pub u32);
 
     #[derive(Visiting)]
-    #[subast(crate::own_map::Item)]
+    #[visiting(crate::own_map::Item)]
     pub struct Doc {
         // No marker: a keyed slot has no positional edit, so the field is walked and nothing else.
         pub table: Registry<&'static str, Item>,
@@ -586,7 +586,7 @@ mod other_shapes {
     pub struct Leaf(pub u32);
 
     #[derive(Visiting)]
-    #[subast(crate::other_shapes::Leaf)]
+    #[visiting(crate::other_shapes::Leaf)]
     pub struct Holder {
         pub deque: VecDeque<Leaf>,
         pub array: [Leaf; 3],

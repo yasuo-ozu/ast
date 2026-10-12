@@ -1,8 +1,8 @@
-error: `#[subast]` cycle through unlisted intermediate `A`: it cannot be drilled inline. List one of the cycle's types in `define_visit!(..)` so a method call breaks the recursion
-  --> tests/ui/drill_cycle.rs:13:17
+error: `#[visiting]` cycle through unlisted intermediate `A`: it cannot be drilled inline. List one of the cycle's types in `define_visit!(..)` so a method call breaks the recursion
+  --> tests/ui/drill_cycle.rs:13:19
    |
-13 | #[subast(crate::A)]
-   |                 ^
+13 | #[visiting(crate::A)]
+   |                   ^
 ...
 24 |     visiting::define_visit!(super::Expr);
    |     ------------------------------------ in this macro invocation

@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/yasuo-ozu/visiting/main/logo.png" alt="visiting" width="420">
+
 # visiting crate [![Latest Version]][crates.io] [![Documentation]][docs.rs] [![CI]][ci-workflow] [![MSRV]][msrv-workflow]
 
 [Latest Version]: https://img.shields.io/crates/v/visiting.svg

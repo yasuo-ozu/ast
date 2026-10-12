@@ -42,6 +42,12 @@ fn diagnostics() {
     // A `#[seq]`/`#[opt]` field whose top-level type wraps a container (`Box<Vec<T>>`) is not an edit
     // target — edit views need a bare single container (the field still descends).
     t.compile_fail("tests/ui/edit_marker_boxed.rs");
+    // The `visiting(..)` check: it marks a node, so only a struct or an enum may carry it; its
+    // follow-list obeys the attribute's rooted-path rule; and the list belongs in one place.
+    t.compile_fail("tests/ui/visiting_check_on_a_trait.rs");
+    t.compile_fail("tests/ui/visiting_check_unrooted_path.rs");
+    t.compile_fail("tests/ui/visiting_check_and_attribute.rs");
+    t.compile_fail("tests/ui/visiting_check_entry_not_a_node.rs");
     // Handing a visited type to a generic parameter the node holds but never follows (`Brackets<T, S>`
     // with `items: Vec<T>`) puts those nodes out of reach — previously a silent empty walk.
     t.compile_fail("tests/ui/generic_element.rs");

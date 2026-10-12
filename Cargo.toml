@@ -10,10 +10,11 @@ repository = "https://github.com/yasuo-ozu/visiting"
 keywords = ["ast", "visitor", "syntax-tree", "derive", "proc-macro"]
 categories = ["development-tools::procedural-macro-helpers", "parsing"]
 # The README links the logo by its raw URL, so the file itself need not ship in the crate.
-exclude = ["logo.png"]
+# The fixture crate exists only for the cross-crate test; it is a workspace member, not content.
+exclude = ["logo.png", "tests/foreign"]
 
 [workspace]
-members = ["macro"]
+members = ["macro", "tests/foreign"]
 resolver = "2"
 
 [lib]
@@ -29,3 +30,4 @@ announce-helper = { path = "../ozu/announce-helper" }
 
 [dev-dependencies]
 trybuild = "1.0"
+visiting-foreign-fixture = { path = "tests/foreign" }

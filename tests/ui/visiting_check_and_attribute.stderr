@@ -1,0 +1,5 @@
+error: this type carries both `#[visiting(..)]` and a `visiting(..)` check; keep one — the check is for a type that does not derive `Visiting`
+  --> tests/ui/visiting_check_and_attribute.rs:14:1
+   |
+14 | #[visiting(crate::Leaf)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^

@@ -737,8 +737,9 @@ pub(crate) fn state_tokens(
 /// A fetch invokes the target's trampoline with this macro as the last continuation, so what comes
 /// back is announce's shape — the continuation list, the definitions newest-first, then our state as
 /// announce's untouched `REST`, behind an `@state` marker. The definition and the follow-list are
-/// read out of the entry; the follow-list rides in announce's `META`, and a type announced by a
-/// crate that has never heard of this one carries none, which is right.
+/// read out of the entry; the follow-list rides in announce's `META` as `visiting(..)`, written
+/// either by our own derive or by a `visiting(..)` check the definer passed to `#[announce]`. A type
+/// announced by a crate that has never heard of this one carries none, which is right: it is a leaf.
 ///
 /// The first bounce carries only state, with no announce wrapper, so both shapes are accepted.
 fn parse_callback_or_state(input: TokenStream) -> syn::Result<BuildInput> {
@@ -761,9 +762,13 @@ fn parse_callback_or_state(input: TokenStream) -> syn::Result<BuildInput> {
             let mut st: BuildInput = syn::parse2(state_ts)?;
             if let Some(entry) = ann.entries.first() {
                 st.just_def = Some(entry.item()?);
-                if let Some(m) = entry.find_meta("follow") {
+                // `visiting(..)`, whoever wrote the trampoline: our derive renders the
+                // resolved list, and a `visiting(..)` check on an `#[announce]`d type puts the
+                // definer's own list there. `find_meta` compares last segments, so the check's
+                // `visiting::visiting(..)` matches the same name.
+                if let Some(m) = entry.find_meta("visiting") {
                     if let Some(args) = m.args.clone() {
-                        st.just_subast = parse_subentries(args)?;
+                        st.just_subast = parse_follow_meta(args)?;
                     }
                 }
             }

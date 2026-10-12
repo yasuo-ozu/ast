@@ -35,6 +35,14 @@ pub fn derive_visiting(input: TokenStream1) -> TokenStream1 {
     crate::visiting::derive_visiting(&input, random(), &path).into()
 }
 
+/// The `#[visiting(..)]` list as an `announce` definition-side check, so a type that does not
+/// derive `Visiting` can still declare itself a node. See `visiting::visiting`.
+#[proc_macro_error]
+#[proc_macro]
+pub fn visiting(input: TokenStream1) -> TokenStream1 {
+    crate::visiting::check(input.into()).into()
+}
+
 #[proc_macro_error]
 #[doc(hidden)]
 #[proc_macro]

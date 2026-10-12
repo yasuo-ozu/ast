@@ -145,6 +145,26 @@ impl Parse for SubEntry {
     }
 }
 
+/// Read a `visiting(..)` META list — a node's follow-list as it rides in an `announce` trampoline.
+///
+/// The list is a `#[visiting(..)]` argument list, so it is parsed with the attribute's own parser
+/// and each entry reduced to its matchkey. Two producers write it: our derive, which has already
+/// resolved every entry (`$crate::Expr as Expr`), and a `visiting(..)` check on an `#[announce]`d
+/// type, which records whatever the definer wrote — a bare path, or `path as Alias`. A `crate = ..`
+/// item names the facade the *defining* crate's impls reach us through and means nothing here, so
+/// it is dropped.
+pub(crate) fn parse_follow_meta(ts: TokenStream) -> Result<Vec<SubEntry>> {
+    let attr = crate::visiting::VisitingAttribute::parse.parse2(ts)?;
+    Ok(attr
+        .follow
+        .into_iter()
+        .map(|e| SubEntry {
+            key: e.matchkey(),
+            path: e.path,
+        })
+        .collect())
+}
+
 pub(crate) fn parse_subentries(ts: TokenStream) -> Result<Vec<SubEntry>> {
     Ok(Punctuated::<SubEntry, Token![,]>::parse_terminated
         .parse2(ts)?

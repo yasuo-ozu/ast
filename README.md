@@ -131,6 +131,30 @@ pub enum Expr { Lit(u32) }
 
 `define_visit!` needs no such hint — it finds the crate on its own.
 
+## Nodes from a crate that only announces
+
+A node has to be declared where it is defined, so a type in a crate that never heard of this one
+cannot be walked. [`announce`](https://docs.rs/announce) publishes a definition's tokens for any
+crate to read, and this crate's metadata speaks announce's protocol — so the definition is reachable.
+What is left is the `Visiting` marker, which only the defining crate may implement. Hand the
+follow-list to `#[announce]` as a check and it is written there:
+
+```rust,ignore
+#[announce::announce(visiting::visiting(crate::Leaf))]
+pub struct Doc {
+    pub leaf: crate::Leaf,
+    pub rest: ::std::vec::Vec<crate::Leaf>,
+}
+```
+
+`#[derive(Visiting)]` is not involved. The check takes the attribute's arguments — paths to follow,
+`path as Alias`, `crate = <facade>` — and announce records them in the trampoline, which is where
+`define_visit!(crate::Doc, crate::Leaf)` reads them. Field types are `crate::`-rooted and bounds
+absolute because announce re-uses the payload in the consuming crate; that is announce's own rule.
+
+`#[seq]`, `#[opt]` and `#[skip]` are helper attributes of the derive, so a node declared this way
+cannot spell them.
+
 ## License
 
 MIT.

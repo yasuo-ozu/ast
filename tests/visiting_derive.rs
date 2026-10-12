@@ -81,12 +81,14 @@ fn metadata_macro_round_trips_definition() {
 #[test]
 fn subast_allowlist_round_trips() {
     // The trampoline carries the `#[visiting]` allowlist in announce's META slot, as
-    // `follow(<path> as <matchkey>)`. The callback matches a single entry, proving both the format
-    // and that the path resolves to a real type.
+    // `visiting(<path> as <matchkey>)` — the same name a `visiting(..)` check on an `#[announce]`d
+    // type is recorded under, so a visitor reads one spelling whoever wrote the trampoline. The
+    // callback matches a single entry, proving both the format and that the path resolves to a real
+    // type.
     macro_rules! check {
         (
             [$($cb:tt)*]
-            $($p:ident)::+ ! => [ follow ( $path:path as $key:ident ) ] { $item:item }
+            $($p:ident)::+ ! => [ visiting ( $path:path as $key:ident ) ] { $item:item }
             @state $_c:path { }
         ) => {
             use $path as SubastAlias;

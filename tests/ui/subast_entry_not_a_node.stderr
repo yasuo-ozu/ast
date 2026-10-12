@@ -5,7 +5,7 @@ error[E0277]: `Plain<S>` is not an AST node
    |            ^^^^^^^^ not an AST node
    |
    = help: the trait `Visiting` is not implemented for `Plain<S>`
-   = note: add `#[derive(Visiting)]` to `Plain<S>`; every `#[visiting(..)]` entry has to be one
+   = note: declare `Plain<S>` a node — `#[derive(Visiting)]`, or a `visiting(..)` check in its `#[announce]` — since every entry in a follow-list has to be one
    = help: the trait `Visiting` is implemented for `Node<S>`
 note: required by a bound in `assert_node`
   --> tests/ui/subast_entry_not_a_node.rs:9:10

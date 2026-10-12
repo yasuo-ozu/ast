@@ -171,7 +171,14 @@ pub(crate) fn parse_visiting(attrs: &[Attribute]) -> VisitingAttribute {
             Err(e) => emit_error!(e.span(), "invalid `#[visiting(..)]`: {}", e),
         }
     }
-    let entries = &args.follow;
+    validate_follow(&args.follow);
+    args
+}
+
+/// Check a follow-list: every path fully qualified, none carrying generic arguments, no two sharing a
+/// matchkey. Shared by the `#[visiting(..)]` attribute and the `announce` check, which differ only in
+/// where the list is written — the rules are about the list itself.
+fn validate_follow(entries: &[SubastEntry]) {
     // Every entry must be rooted, whatever it names. The path has two jobs: as a *match key* only the
     // last segment is compared, so the root is irrelevant there — but as a *fetch target* for a type
     // `define_visit!(..)` does not list, it is invoked as a macro to pull that type's definition, in the
@@ -189,7 +196,7 @@ pub(crate) fn parse_visiting(attrs: &[Attribute]) -> VisitingAttribute {
             let p = &e.path;
             emit_error!(
                 e.path,
-                "`#[visiting(..)]` path `{}` is not fully qualified. Use a `crate`-rooted path \
+                "`visiting(..)` path `{}` is not fully qualified. Use a `crate`-rooted path \
                  (`crate::path::to::{}`) — or an external-crate path (`other_crate::path::{}`) for a \
                  type from another crate. A bare ident or a `self::`/`super::`-relative path resolves \
                  in the consumer's scope (where the metadata macro is expanded), not here.",
@@ -213,7 +220,7 @@ pub(crate) fn parse_visiting(attrs: &[Attribute]) -> VisitingAttribute {
             }
             emit_error!(
                 e.path,
-                "`#[visiting(..)]` path `{}` carries generic arguments; a subast entry names a type by \
+                "`visiting(..)` path `{}` carries generic arguments; a follow-list entry names a type by \
                  path only (it is used as a metadata-macro fetch target and a match scrutinee, where \
                  `<..>` is illegal). Drop the arguments — write `{}`.",
                 quote!(#p).to_string().replace(' ', ""),
@@ -227,12 +234,11 @@ pub(crate) fn parse_visiting(attrs: &[Attribute]) -> VisitingAttribute {
         if seen.insert(key.clone(), ()).is_some() {
             emit_error!(
                 e.path,
-                "two `#[visiting(..)]` entries share the last segment `{}`; alias one (`path as Alias`)",
+                "two `visiting(..)` entries share the last segment `{}`; alias one (`path as Alias`)",
                 key
             );
         }
     }
-    args
 }
 
 /// Produce a cleaned copy of the input definition (attributes stripped, except the field-level
@@ -339,7 +345,7 @@ fn for_each_field_type_of(data: &Data, f: &mut dyn FnMut(&Type)) {
 ///   `path::to::T! { .. }`.
 pub fn derive_visiting(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStream {
     let ident = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let (_, _, where_clause) = input.generics.split_for_impl();
 
     // A union has no fields a walk could enter, and nothing downstream handles one: accepting it
     // here only defers the complaint to `define_visit!`, which would report "no AST definitions
@@ -353,18 +359,7 @@ pub fn derive_visiting(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStr
 
     check_ambiguous_last_idents(input);
     let subast = parse_visiting(&input.attrs).follow;
-    let field_heads = field_head_idents(input);
-    for e in &subast {
-        let key = e.matchkey();
-        if !field_heads.contains(&key.to_string()) {
-            emit_warning!(
-                e.path,
-                "`#[visiting]` entry `{}` matches no field of `{}`",
-                key,
-                ident
-            );
-        }
-    }
+    warn_unmatched_entries(input, &subast);
 
     let subast_entry_tokens = subast_tokens(&subast);
 
@@ -400,54 +395,10 @@ pub fn derive_visiting(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStr
         quote!()
     };
 
-    // Every `#[visiting]` entry must itself be a node. Without this the omission surfaces only when a
-    // `define_visit!` tries to expand the entry's metadata macro, as `cannot find `X` in `$crate`` — a
-    // message about a macro the user never wrote, in a module far from the attribute at fault.
-    //
-    // The bound names the matching FIELD's type, not the `#[visiting]` path: an entry is written bare
-    // (`crate::Expr`, a matchkey), while the field spells the arguments (`Expr<S>`). Those live in
-    // the node's own generics, so the check is a generic fn that is never called.
-    let subast_are_nodes: Vec<TokenStream> = subast
-        .iter()
-        .filter_map(|e| {
-            let key = e.matchkey().to_string();
-            let mut found: Option<TypePath> = None;
-            for_each_field_type_of(&input.data, &mut |ty| {
-                for_each_type_path(ty, &mut |tp| {
-                    if found.is_none()
-                        && tp
-                            .path
-                            .segments
-                            .last()
-                            .map(|s| s.ident.to_string())
-                            .as_deref()
-                            == Some(key.as_str())
-                    {
-                        found = Some(tp.clone());
-                    }
-                })
-            });
-            // No matching field: `parse_visiting`'s own warning already covers that case.
-            let tp = found?;
-            let span = e.path.span();
-            Some(quote! {
-                const _: () = {
-                    fn #{Ident::new("__visiting_subast_entry_is_a_node", span)}
-                        #impl_generics () #where_clause
-                    {
-                        fn assert_node<__VisitingT: ?Sized + #root::visit::Visiting>() {}
-                        let _ = assert_node::<#tp>;
-                    }
-                };
-            })
-        })
-        .collect();
+    let marker = node_marker(input, &subast, root);
 
     quote! {
-        #[automatically_derived]
-        impl #impl_generics #root::visit::Visiting for #ident #ty_generics #where_clause {}
-
-        #(#subast_are_nodes)*
+        #marker
 
         #repeater_items
 
@@ -469,7 +420,7 @@ pub fn derive_visiting(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStr
             ($_list:tt @state $cb:path { $($pre:tt)* }) => {
                 $cb ! {
                     [$cb !]
-                    #ident ! => [ follow ( #(#subast_entry_tokens),* ) ]
+                    #ident ! => [ visiting ( #(#subast_entry_tokens),* ) ]
                     { #cleaned }
                     @state $cb { $($pre)* }
                 }
@@ -525,4 +476,153 @@ fn check_ambiguous_last_idents(input: &DeriveInput) {
                     entry and write that alias in the field"
         );
     }
+}
+
+/// Warn about a follow entry that matches no field of the definition.
+///
+/// `field_head_idents` over-approximates (it collects every segment of every field type), so this
+/// never fires on an entry that is in fact reachable.
+fn warn_unmatched_entries(input: &DeriveInput, subast: &[SubastEntry]) {
+    let field_heads = field_head_idents(input);
+    for e in subast {
+        let key = e.matchkey();
+        if !field_heads.contains(&key.to_string()) {
+            emit_warning!(
+                e.path,
+                "`#[visiting]` entry `{}` matches no field of `{}`",
+                key,
+                &input.ident
+            );
+        }
+    }
+}
+
+/// What makes a type a *node*, as opposed to a type a visitor merely knows the shape of: the
+/// `Visiting` marker impl, plus one assertion per follow entry that the entry is a node too.
+///
+/// Shared by `#[derive(Visiting)]` and the `announce` check, which agree on this part and differ
+/// only in who carries the definition to the visitor — our own metadata macro, or announce's
+/// trampoline.
+fn node_marker(input: &DeriveInput, subast: &[SubastEntry], root: &Path) -> TokenStream {
+    let ident = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    // Every `#[visiting]` entry must itself be a node. Without this the omission surfaces only when a
+    // `define_visit!` tries to expand the entry's metadata macro, as `cannot find `X` in `$crate`` — a
+    // message about a macro the user never wrote, in a module far from the attribute at fault.
+    //
+    // The bound names the matching FIELD's type, not the `#[visiting]` path: an entry is written bare
+    // (`crate::Expr`, a matchkey), while the field spells the arguments (`Expr<S>`). Those live in
+    // the node's own generics, so the check is a generic fn that is never called.
+    let subast_are_nodes: Vec<TokenStream> = subast
+        .iter()
+        .filter_map(|e| {
+            let key = e.matchkey().to_string();
+            let mut found: Option<TypePath> = None;
+            for_each_field_type_of(&input.data, &mut |ty| {
+                for_each_type_path(ty, &mut |tp| {
+                    if found.is_none()
+                        && tp
+                            .path
+                            .segments
+                            .last()
+                            .map(|s| s.ident.to_string())
+                            .as_deref()
+                            == Some(key.as_str())
+                    {
+                        found = Some(tp.clone());
+                    }
+                })
+            });
+            // No matching field: `parse_visiting`'s own warning already covers that case.
+            let tp = found?;
+            let span = e.path.span();
+            Some(quote! {
+                const _: () = {
+                    fn #{Ident::new("__visiting_subast_entry_is_a_node", span)}
+                        #impl_generics () #where_clause
+                    {
+                        fn assert_node<__VisitingT: ?Sized + #root::visit::Visiting>() {}
+                        let _ = assert_node::<#tp>;
+                    }
+                };
+            })
+        })
+        .collect();
+
+    quote! {
+        #[automatically_derived]
+        impl #impl_generics #root::visit::Visiting for #ident #ty_generics #where_clause {}
+
+        #(#subast_are_nodes)*
+    }
+}
+
+/// How to name an item announce handed the check, for the "not a node" error.
+fn item_kind(item: &Item) -> &'static str {
+    match item {
+        Item::Union(_) => "a union has no walkable fields, and",
+        Item::Trait(_) => "a trait",
+        Item::Type(_) => "a type alias",
+        Item::Mod(_) => "a module",
+        _ => "this item",
+    }
+}
+
+/// `visiting::visiting!` — the `#[visiting(..)]` list, written as an `announce` definition-side
+/// check instead of as an attribute of our derive.
+///
+/// `#[announce(visiting::visiting(crate::Leaf))]` asks announce for two things. It records
+/// `visiting(crate::Leaf)` in the trampoline's META, which is where a generated visitor reads a
+/// node's follow-list from, whichever macro emitted that trampoline. And it invokes this macro
+/// beside the definition, as `visiting! { (crate::Leaf), ITEM }`.
+///
+/// Being expanded *beside the definition* is the whole point. The `Visiting` marker impl belongs to
+/// the crate that owns the type, so a visitor in another crate cannot supply it — which is why an
+/// `#[announce]`d type had to be marked by hand, and why a type from a crate that only announces
+/// could not be walked at all. The check is that hand, moved to the one place the orphan rule allows
+/// it to be written.
+///
+/// It deliberately does *not* emit a metadata macro: announce's trampoline already carries the
+/// definition. Nor does it emit the `Repeater` table the derive writes for context-dependent field
+/// types — announce's own `repeater = ..` covers that, and the two would collide.
+pub fn check(input: TokenStream) -> TokenStream {
+    let announce_helper::CheckInput { args, item } = match syn::parse2(input) {
+        Ok(c) => c,
+        Err(e) => return e.to_compile_error(),
+    };
+    // Only a struct or an enum can be a node. `#[announce]` also takes a trait, a type alias and an
+    // inline `mod`, so the rule has to be stated here rather than left to the visitor, which would
+    // report it as a missing definition.
+    let kind = item_kind(&item);
+    let di: DeriveInput = match item {
+        Item::Struct(s) => s.into(),
+        Item::Enum(e) => e.into(),
+        other => abort!(
+            other,
+            "`visiting::visiting` applies to a struct or an enum; {} cannot be an AST node",
+            kind
+        ),
+    };
+    // The list has one home. Written twice it would also be marked twice, and the duplicate
+    // `impl Visiting` is reported against generated code rather than against either spelling.
+    if let Some(attr) = di.attrs.iter().find(|a| a.path().is_ident("visiting")) {
+        abort!(
+            attr,
+            "this type carries both `#[visiting(..)]` and a `visiting(..)` check; keep one — the \
+             check is for a type that does not derive `Visiting`"
+        );
+    }
+    let attr = match VisitingAttribute::parse.parse2(args) {
+        Ok(a) => a,
+        Err(e) => {
+            emit_error!(e.span(), "invalid `visiting(..)` check: {}", e);
+            VisitingAttribute::default()
+        }
+    };
+    validate_follow(&attr.follow);
+    check_ambiguous_last_idents(&di);
+    warn_unmatched_entries(&di, &attr.follow);
+    let root = attr.krate.unwrap_or_else(|| parse_quote!(::visiting));
+    node_marker(&di, &attr.follow, &root)
 }

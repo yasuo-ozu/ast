@@ -1,0 +1,15 @@
+# A crate that only *announces*. It is the other side of the orphan rule: a visitor built in
+# another crate cannot implement `Visiting` for these types, so they have to mark themselves.
+[package]
+name = "visiting-foreign-fixture"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.71"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+announce = { path = "../../../ozu/announce" }
+visiting = { path = "../.." }

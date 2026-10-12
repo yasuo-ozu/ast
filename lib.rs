@@ -18,6 +18,17 @@
 //!   one of these to make a container of your own walkable.
 //! * [`Repeater`] — plumbing. It lets the generated code name a field's type from a different
 //!   module or crate than the one the node was defined in.
+//!
+//! # Nodes you did not write
+//!
+//! A node has to be declared where it is defined, which is a problem for a type in a crate that has
+//! never heard of this one. [`announce`] already solves half of it — it publishes a definition's
+//! tokens for any crate to read — and this crate's metadata now speaks announce's protocol, so a
+//! walk can fetch an announced definition. The other half is the [`Visiting`] marker, which only the
+//! defining crate may implement. [`visiting`](macro@crate::visiting) is that half: the follow-list
+//! handed to `#[announce]` as a check, expanded beside the definition.
+//!
+//! [`announce`]: https://docs.rs/announce
 
 #[doc(hidden)]
 pub mod _imp {
@@ -95,6 +106,44 @@ pub mod visit {
 /// }
 /// ```
 pub use visiting_macro::Visiting;
+
+/// The `#[visiting(..)]` list as an [`announce`] check, for a type that does not derive [`Visiting`].
+///
+/// `announce` solves the first half of the same problem this crate does: it puts a definition's
+/// tokens in a `macro_rules!` beside the item so another crate can read them. A type carrying
+/// `#[announce]` is therefore already walkable in shape — but being a *node* also means carrying the
+/// [`Visiting`] marker, and that impl can only be written in the crate that owns the type. So an
+/// announced type had to be marked by hand, and a type from a crate that merely announces could not
+/// be marked at all.
+///
+/// Pass this macro to `#[announce]` as a check and both halves arrive together:
+///
+/// ```ignore
+/// #[announce::announce(visiting::visiting(crate::Leaf))]
+/// pub struct Doc {
+///     pub leaf: Leaf,
+/// }
+/// ```
+///
+/// announce invokes the check beside the definition — where the marker impl is legal — and records
+/// `visiting(crate::Leaf)` in the trampoline's metadata, which is where a generated visitor reads a
+/// node's follow-list from. `define_visit!(crate::Doc, crate::Leaf)` then builds a visitor over
+/// types that derive nothing of ours.
+///
+/// The argument list is exactly the attribute's: paths to follow, `path as Alias`, and
+/// `crate = <facade>`. The same rules apply, for the same reasons — see [`Visiting`].
+///
+/// # What it does not carry
+///
+/// * `#[seq]`, `#[opt]` and `#[skip]` are helper attributes of the derive. A type that does not
+///   derive cannot spell them, so a node declared this way is walked field by field.
+/// * The derive's `Repeater` table, which names a context-dependent field type portably, is
+///   announce's `repeater = ..` here.
+/// * Write the list in one place. Carrying both `#[visiting(..)]` and a check is an error, since the
+///   type would be marked twice.
+///
+/// [`announce`]: https://docs.rs/announce
+pub use visiting_macro::visiting;
 
 /// Define a visitor over the given AST types. Put it in its own empty module:
 ///
@@ -388,7 +437,8 @@ macro_rules! define_visit {
     };
 }
 
-/// Marker trait implemented by every type carrying `#[derive(Visiting)]`.
+/// Marker trait implemented by every type declared a node — by `#[derive(Visiting)]`, or by a
+/// [`visiting(..)`](macro@crate::visiting) check handed to `#[announce]`.
 ///
 /// It carries no methods; its only purpose is to let generic code (and the `#[visitor]` generator)
 /// bound on "is an AST node".
@@ -397,7 +447,8 @@ macro_rules! define_visit {
     diagnostic::on_unimplemented(
         message = "`{Self}` is not an AST node",
         label = "not an AST node",
-        note = "add `#[derive(Visiting)]` to `{Self}`; every `#[visiting(..)]` entry has to be one"
+        note = "declare `{Self}` a node — `#[derive(Visiting)]`, or a `visiting(..)` check in its \
+            `#[announce]` — since every entry in a follow-list has to be one"
     )
 )]
 pub trait Visiting {}

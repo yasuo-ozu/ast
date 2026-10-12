@@ -1,0 +1,7 @@
+error: `visiting::visiting` applies to a struct or an enum; a trait cannot be an AST node
+ --> tests/ui/visiting_check_on_a_trait.rs:6:1
+  |
+6 | / pub trait Greet {
+7 | |     fn hi(&self) -> u32;
+8 | | }
+  | |_^

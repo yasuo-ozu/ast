@@ -3,25 +3,25 @@
 //! lives one module down, so the glob takes the module's name and not its contents.
 
 use core::marker::PhantomData;
-use ast::Ast;
+use visiting::Visiting;
 
-#[derive(Ast)]
+#[derive(Visiting)]
 pub enum Item<S> {
     Leaf(PhantomData<S>),
 }
 
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Item)]
 pub struct List<S> {
     pub items: Vec<Item<S>>,
 }
 
 pub mod base {
-    ast::visitor!(crate::Item);
+    visiting::define_visit!(crate::Item);
 }
 
 pub mod top {
-    ast::visitor!(crate::base => crate::List);
+    visiting::define_visit!(crate::base => crate::List);
 }
 
 use top::*;

@@ -65,8 +65,8 @@ impl Parse for EntryInput {
     }
 }
 
-/// Kick off the metadata ping-pong from a `visitor!(...)` invocation (function-like, used inside the
-/// visitor module). The crate path arrives via `$crate`, captured by the `visitor!` shim.
+/// Kick off the metadata ping-pong from a `define_visit!(...)` invocation (function-like, used inside the
+/// visitor module). The crate path arrives via `$crate`, captured by the `define_visit!` shim.
 pub fn entry(input: TokenStream, nonce: u64) -> TokenStream {
     let EntryInput { root, args } = match syn::parse2(input) {
         Ok(e) => e,
@@ -75,10 +75,10 @@ pub fn entry(input: TokenStream, nonce: u64) -> TokenStream {
     if args.types.is_empty() {
         abort!(
             Span::call_site(),
-            "visitor!(..) needs at least one AST type"
+            "define_visit!(..) needs at least one AST type"
         );
     }
-    let build: Path = parse_quote!(#root::_imp::ast_macro::__visitor_build);
+    let build: Path = parse_quote!(#root::_imp::visiting_macro::__visitor_build);
     let nonce = nonce.to_string();
     let nonce: TokenStream = nonce.parse().unwrap();
     let all_types = &args.types;
@@ -109,7 +109,7 @@ pub fn entry(input: TokenStream, nonce: u64) -> TokenStream {
         Some(base) => {
             let state = make_state(quote!(), all_types);
             quote! {
-                #base::__ast_visited ! { @visited #build { #state } }
+                #base::__visiting_visited ! { @visited #build { #state } }
             }
         }
         // No base: pop the first type now (so `rest` carries the remainder), recording it under

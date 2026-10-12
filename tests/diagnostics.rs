@@ -21,7 +21,7 @@ fn diagnostics() {
     // segment, so they cannot be told apart.
     t.compile_fail("tests/ui/ambiguous_last_ident.rs");
     // The same clash, but spread along an inheritance chain — one type per visitor, never meeting in
-    // a single node or a single `visitor!(..)` list.
+    // a single node or a single `define_visit!(..)` list.
     t.compile_fail("tests/ui/chain_last_ident_collision.rs");
     // A `#[seq]`/`#[opt]` field can't view an inherited (non-targeted) type — clean error, not E0599.
     t.compile_fail("tests/ui/edit_seq_inherited.rs");
@@ -31,7 +31,7 @@ fn diagnostics() {
     t.compile_fail("tests/ui/visited_listed_twice.rs");
     // A `#[subast]` entry that is not itself a node — caught at the derive, by the field's type.
     t.compile_fail("tests/ui/subast_entry_not_a_node.rs");
-    // `#[derive(Ast)]` on a union.
+    // `#[derive(Visiting)]` on a union.
     t.compile_fail("tests/ui/derive_ast_on_a_union.rs");
     // `impl_chain!` given a method no ancestor declares.
     t.compile_fail("tests/ui/impl_chain_unknown_method.rs");

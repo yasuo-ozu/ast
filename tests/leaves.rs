@@ -1,15 +1,15 @@
-//! The field-level markers and the crate-path override: `#[skip]`, and `#[ast(<path>)]` for a
+//! The field-level markers and the crate-path override: `#[skip]`, and `#[visiting(<path>)]` for a
 //! grammar that reaches this crate through a facade.
 #![allow(dead_code)]
 
 // `#[skip]` prunes one field. The walk still enters its siblings, so this is not "stop here".
 mod skip {
-    use ast::Ast;
+    use visiting::Visiting;
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     pub struct Leaf(pub u32);
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::skip::Leaf)]
     pub struct Node {
         pub a: Leaf,
@@ -19,7 +19,7 @@ mod skip {
     }
 
     pub mod v {
-        ast::visitor!(super::Leaf, super::Node);
+        visiting::define_visit!(super::Leaf, super::Node);
     }
 
     #[test]
@@ -46,28 +46,28 @@ mod skip {
     }
 }
 
-// `#[ast(<path>)]` makes the derive name a facade instead of `::ast`, so a grammar depending only
+// `#[visiting(<path>)]` makes the derive name a facade instead of `::visiting`, so a grammar depending only
 // on that facade needs no direct dependency on this crate. The module below stands in for one.
 mod facade {
     pub mod my_crate {
-        pub use ast::*;
+        pub use visiting::*;
     }
 
-    use my_crate::Ast;
+    use my_crate::Visiting;
 
-    #[derive(Ast)]
-    #[ast(crate::facade::my_crate)]
+    #[derive(Visiting)]
+    #[visiting(crate::facade::my_crate)]
     pub struct Leaf(pub u32);
 
-    #[derive(Ast)]
-    #[ast(crate::facade::my_crate)]
+    #[derive(Visiting)]
+    #[visiting(crate::facade::my_crate)]
     #[subast(crate::facade::Leaf)]
     pub struct Node {
         pub leaves: Vec<Leaf>,
     }
 
     pub mod v {
-        ast::visitor!(super::Leaf, super::Node);
+        visiting::define_visit!(super::Leaf, super::Node);
     }
 
     #[test]

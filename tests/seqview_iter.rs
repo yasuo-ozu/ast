@@ -8,8 +8,8 @@
 //! single-slot wrapper (`Box<T>`) is a `Walk` (always one node), so a `Vec<Box<T>>` is
 //! `SeqView<'a, Box<T>>` — the visitor descends the box as a further `Walk` level.
 
-use ast::{Elements, OptEdit, OptView, SeqEdit, SeqView};
 use std::collections::{BTreeMap, HashMap, LinkedList, VecDeque};
+use visiting::{Elements, OptEdit, OptView, SeqEdit, SeqView};
 
 // ---- `View`: every std shape that can hand out `&mut` to what it holds ----
 

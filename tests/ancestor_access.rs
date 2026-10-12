@@ -1,41 +1,41 @@
-//! Reaching a visitor's ancestors: the `__ast_base` relay, and `impl_chain!` for the empty
+//! Reaching a visitor's ancestors: the `__visiting_base` relay, and `impl_chain!` for the empty
 //! supertrait impls an extending visitor would otherwise spell out by hand.
 #![allow(dead_code)]
 
-use ast::Ast;
 use core::marker::PhantomData;
+use visiting::Visiting;
 
-#[derive(Ast)]
+#[derive(Visiting)]
 pub enum Type<S> {
     Unit(PhantomData<S>),
 }
 
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Type)]
 pub enum Expr<S> {
     T(Box<Type<S>>),
 }
 
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Expr)]
 pub enum Stmt<S> {
     E(Box<Expr<S>>),
 }
 
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Stmt)]
 pub enum Item<S> {
     S(Box<Stmt<S>>),
 }
 
 pub mod base {
-    ast::visitor!(crate::Type, crate::Expr);
+    visiting::define_visit!(crate::Type, crate::Expr);
 }
 pub mod mid {
-    ast::visitor!(crate::base => crate::Stmt);
+    visiting::define_visit!(crate::base => crate::Stmt);
 }
 pub mod top {
-    ast::visitor!(crate::mid => crate::Item);
+    visiting::define_visit!(crate::mid => crate::Item);
 }
 
 fn sample() -> Item<()> {
@@ -48,7 +48,7 @@ fn sample() -> Item<()> {
 // no mention of the chain at all.
 #[derive(Default)]
 struct OnlyItems(u32);
-top::__ast_chain::impl_chain!(top; OnlyItems);
+top::__visiting_chain::impl_chain!(top; OnlyItems);
 impl<S> top::Visit<S> for OnlyItems {
     fn visit_item(&mut self, i: &Item<S>) {
         self.0 += 1;
@@ -69,7 +69,7 @@ fn impl_chain_fills_every_ancestor() {
 struct Mixed {
     types: u32,
 }
-top::__ast_chain::impl_chain! { top; Mixed;
+top::__visiting_chain::impl_chain! { top; Mixed;
     // The argument type is left off: the macro knows it.
     fn visit_type(&mut self, i) {
         self.types += 1;
@@ -83,7 +83,7 @@ impl<S> top::Visit<S> for Mixed {}
 struct Spelled {
     types: u32,
 }
-top::__ast_chain::impl_chain! { top; Spelled;
+top::__visiting_chain::impl_chain! { top; Spelled;
     fn visit_type(&mut self, i: &Type<S>) -> () {
         self.types += 1;
         base::visit_type(self, i);
@@ -103,7 +103,7 @@ fn impl_chain_accepts_a_full_signature() {
 struct HandBack {
     types: u32,
 }
-top::__ast_chain::impl_chain! { top; HandBack; fn visit_type; }
+top::__visiting_chain::impl_chain! { top; HandBack; fn visit_type; }
 impl<S> base::Visit<S> for HandBack {
     fn visit_type(&mut self, i: &Type<S>) {
         self.types += 1;
@@ -134,13 +134,13 @@ fn impl_chain_routes_a_method_to_its_ancestor() {
 struct ViaRelay {
     types: u32,
 }
-impl<S> top::__ast_base::__ast_base::Visit<S> for ViaRelay {
+impl<S> top::__visiting_base::__visiting_base::Visit<S> for ViaRelay {
     fn visit_type(&mut self, _i: &Type<S>) {
         self.types += 1;
     }
 }
-impl<S> top::__ast_base::__ast_base::VisitMut<S> for ViaRelay {}
-top::__ast_chain::impl_chain! { top; ViaRelay; fn visit_type; }
+impl<S> top::__visiting_base::__visiting_base::VisitMut<S> for ViaRelay {}
+top::__visiting_chain::impl_chain! { top; ViaRelay; fn visit_type; }
 impl<S> top::Visit<S> for ViaRelay {}
 
 #[test]
@@ -154,7 +154,7 @@ fn relay_names_a_transitive_ancestor() {
 // without first asking whether the visitor inherits.
 #[derive(Default)]
 struct Root(u32);
-base::__ast_chain::impl_chain!(base; Root);
+base::__visiting_chain::impl_chain!(base; Root);
 impl<S> base::Visit<S> for Root {
     fn visit_type(&mut self, _i: &Type<S>) {
         self.0 += 1;

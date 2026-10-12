@@ -28,9 +28,9 @@ pub(crate) fn gen_side(
     let struct_only = m.method_mode;
     let visit_tr = side.visit_trait();
     let into_vis_tr = side.ty("IntoVisitor");
-    let into_hook_tr = side.ty("__AstIntoHook");
-    let hook_tr = side.ty("__AstHook");
-    let driver = side.ty("__AstDriver");
+    let into_hook_tr = side.ty("__VisitingIntoHook");
+    let hook_tr = side.ty("__VisitingHook");
+    let driver = side.ty("__VisitingDriver");
     let into_vis_fn = side.func("into_visitor");
     let into_hook_fn = side.func("into_hook");
     let visit_method = side.func("visit");
@@ -69,14 +69,14 @@ pub(crate) fn gen_side(
         )
         .collect();
     let view_lt = {
-        let id = fresh_ident("__ast_vw", &lt_reserved);
+        let id = fresh_ident("__visiting_vw", &lt_reserved);
         syn::Lifetime::new(&format!("'{id}"), Span::call_site())
     };
     // The conversions name their result as an associated type rather than returning `impl Trait`
     // from a trait method: that spelling is only stable from 1.75, and every one of these impls
     // knows its concrete adapter anyway.
     let a_vis = fresh_ident("__Visitor", &reserved);
-    let hooks_mod = side.func("__ast_hooks");
+    let hooks_mod = side.func("__visiting_hooks");
     let a_hook = fresh_ident("__Hooked", &reserved);
     let p_ow = fresh_ident("__OW", &reserved);
 
@@ -92,18 +92,18 @@ pub(crate) fn gen_side(
         /// The per-method generic naming the view type: `p_vw` for seq, `p_ow` for opt (the *same*
         /// idents `gen_side` already mints once via `fresh_ident` — not reminted per type/kind).
         view_param: Ident,
-        /// `'__ast_vw,` for a seq view (its `Elements` bound names it); empty for an opt, which
+        /// `'__visiting_vw,` for a seq view (its `Elements` bound names it); empty for an opt, which
         /// holds at most one element and so needs no iterator. Emitted *first* in the method's
         /// generic list, where a lifetime has to go.
         lt_decl: TokenStream,
-        /// The whole bound on `view_param`: `SeqView<Ty> + Elements<'__ast_vw, Ty>` for a seq,
+        /// The whole bound on `view_param`: `SeqView<Ty> + Elements<'__visiting_vw, Ty>` for a seq,
         /// `OptView<Ty>` for an opt.
         bound: TokenStream,
-        /// The view argument's reference: `&'__ast_vw` / `&'__ast_vw mut` for a seq (the lifetime
+        /// The view argument's reference: `&'__visiting_vw` / `&'__visiting_vw mut` for a seq (the lifetime
         /// its `Elements` bound is quantified over), plain `&` / `&mut` for an opt.
         amp: TokenStream,
-        /// The method's `where`-clause: the type's own trait-method predicates, plus `Ty: '__ast_vw`
-        /// for a seq — which `Elements<'__ast_vw, Ty>` requires and rustc will not infer.
+        /// The method's `where`-clause: the type's own trait-method predicates, plus `Ty: '__visiting_vw`
+        /// for a seq — which `Elements<'__visiting_vw, Ty>` requires and rustc will not infer.
         where_clause: TokenStream,
         /// Trait-method default body: the container's own iterator for a seq ([`Elements`]), an
         /// `if let Some(..) = get(v)` for an opt.
@@ -129,22 +129,22 @@ pub(crate) fn gen_side(
             let doc = match (kind, side.mutable) {
                 (Container::Seq, true) => format!(
                     "Structurally edit the `{name}` nodes in a `Vec`-like parent slot via a \
-                     [`SeqEdit`](__ast_rt::SeqEdit) (`push`/`insert`/`remove`/`retain_mut`, \
+                     [`SeqEdit`](__visiting_rt::SeqEdit) (`push`/`insert`/`remove`/`retain_mut`, \
                      `&mut v[i]`, and `v.elements_mut()`); default descends each via `{mname}`."
                 ),
                 (Container::Seq, false) => format!(
                     "Observe the `{name}` nodes in a `Vec`-like parent slot via a \
-                     [`SeqView`](__ast_rt::SeqView) (`len`, `&v[i]`, and `v.elements()`) — the \
+                     [`SeqView`](__visiting_rt::SeqView) (`len`, `&v[i]`, and `v.elements()`) — the \
                      slot itself, not just each element; default descends each via `{mname}`."
                 ),
                 (Container::Opt, true) => format!(
                     "Structurally edit the `{name}` node in an `Option`-like parent slot via an \
-                     [`OptEdit`](__ast_rt::OptEdit) (`get_mut`/`set`/`take`); default \
+                     [`OptEdit`](__visiting_rt::OptEdit) (`get_mut`/`set`/`take`); default \
                      descends it via `{mname}`."
                 ),
                 (Container::Opt, false) => format!(
                     "Observe the `{name}` node in an `Option`-like parent slot via an \
-                     [`OptView`](__ast_rt::OptView) (`is_some`/`get`) — the slot itself, \
+                     [`OptView`](__visiting_rt::OptView) (`is_some`/`get`) — the slot itself, \
                      not just the element; default descends it via `{mname}`."
                 ),
             };
@@ -172,13 +172,13 @@ pub(crate) fn gen_side(
                 // takes the view's whole `lt` borrow, so it is a single pass — an override that
                 // wants to iterate *and* resize indexes instead (`&mut v[i]`, then `push`).
                 Container::Seq => quote! {
-                    for __ast_e in __ast_rt::Elements::#{side.func("elements")}(v) {
-                        self.#method(__ast_e);
+                    for __visiting_e in __visiting_rt::Elements::#{side.func("elements")}(v) {
+                        self.#method(__visiting_e);
                     }
                 },
                 Container::Opt => quote! {
-                    if let ::core::option::Option::Some(__ast_e) = #view_trait::#{side.func("get")}(v) {
-                        self.#method(__ast_e);
+                    if let ::core::option::Option::Some(__visiting_e) = #view_trait::#{side.func("get")}(v) {
+                        self.#method(__visiting_e);
                     }
                 },
             };
@@ -197,7 +197,7 @@ pub(crate) fn gen_side(
 
     struct S {
         ty: TokenStream,
-        /// The same type, named through this module's `__ast_ty_*` alias. The hook machinery sits in
+        /// The same type, named through this module's `__visiting_ty_*` alias. The hook machinery sits in
         /// a submodule, where a `super::`-relative path the caller wrote would resolve one level too
         /// high; the alias is a plain name the submodule picks up by glob.
         ty_in_mod: TokenStream,
@@ -232,7 +232,7 @@ pub(crate) fn gen_side(
             let own = &t.own_use;
             let path = &t.path;
             let ty = quote!( #path #own );
-            let ty_alias = Ident::new(&format!("__ast_ty_{ident}"), Span::call_site());
+            let ty_alias = Ident::new(&format!("__visiting_ty_{ident}"), Span::call_site());
             let ty_in_mod = quote!( #ty_alias #own );
             let mut method_params = t.method_params.clone();
             sort_lifetimes_first(&mut method_params);
@@ -310,7 +310,7 @@ pub(crate) fn gen_side(
                 trait_where,
                 free_where,
                 hook: side.func(&format!("hook_{}", to_snake(&ident))),
-                hook_struct: side.ty(&format!("__Ast{ident}Hook")),
+                hook_struct: side.ty(&format!("__Visiting{ident}Hook")),
                 body: if side.mutable { t.body_mut.clone() } else { t.body.clone() },
             }
         })
@@ -329,7 +329,7 @@ pub(crate) fn gen_side(
         .join(", ");
     let entry = visit_method.to_string();
     let trait_doc = format!(
-        "Visitor over {visited_list} (generated by `visitor!`). Override the `visit_*{mut_sfx}` methods \
+        "Visitor over {visited_list} (generated by `define_visit!`). Override the `visit_*{mut_sfx}` methods \
          you care about — each default recurses into that node's children; start with \
          `node.{entry}(&mut visitor)`.{base_note}",
         mut_sfx = side.fn_suffix(),
@@ -482,7 +482,7 @@ pub(crate) fn gen_side(
         .map(|s| {
             quote! {
                 impl< #(for gp in &s.free_params) { #gp, } #p_v: #visit_tr #g_use #(if !struct_only) { + ?Sized } >
-                    __ast_rt::walk::#walk_tr< #tag #tag_args, __ast_rt::walk::Here, #p_v >
+                    __visiting_rt::walk::#walk_tr< #tag #tag_args, __visiting_rt::walk::Here, #p_v >
                     for #{&s.ty} #{&s.free_where}
                 {
                     fn #walk_fn(#walk_recv, v: &mut #p_v) {
@@ -516,7 +516,7 @@ pub(crate) fn gen_side(
     // ancestor declares, so a closure over an inherited type has somewhere to land.
     struct AncHook {
         tr: Ident,
-        /// The ancestor, reached through the `__ast_base` relay rather than by the path the caller
+        /// The ancestor, reached through the `__visiting_base` relay rather than by the path the caller
         /// wrote: a `super::`-relative one would mean something else inside the hooks module.
         path_in_mod: TokenStream,
         g_params: Vec<GenericParam>,
@@ -549,11 +549,12 @@ pub(crate) fn gen_side(
                             syn::parse2(quote!(#{&d.ident})).expect("ident is a path")
                         });
                     let args = &d.args;
-                    let alias = Ident::new(&format!("__ast_ty_{}", d.ident), Span::call_site());
+                    let alias =
+                        Ident::new(&format!("__visiting_ty_{}", d.ident), Span::call_site());
                     let hops = vec![&relay_seg; i + 1];
                     (
                         side.func(&format!("hook_{}", to_snake(&d.ident))),
-                        side.ty(&format!("__Ast{}InhHook", d.ident)),
+                        side.ty(&format!("__Visiting{}InhHook", d.ident)),
                         side.method(&d.ident),
                         quote!( #path #args ),
                         quote!( #(#hops ::)* #alias #args ),

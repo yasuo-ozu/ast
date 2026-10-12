@@ -1,4 +1,4 @@
-//! The descent goes through [`Walk`](ast::walk::Walk): the container impls in `ast` peel the
+//! The descent goes through [`Walk`](visiting::walk::Walk): the container impls in `ast` peel the
 //! wrapper layers and each visited node's generated impl bottoms out in its `visit_*` method.
 //!
 //! Each call carries an indicator computed from the field's shape, so the container impls stay generic
@@ -8,19 +8,19 @@
 #![allow(dead_code)]
 
 mod ast {
-    use ast::Ast;
+    use visiting::Visiting;
 
     /// A consumer leaf that shares a tuple with a followed node — the `Vec<(Length, Line)>` shape.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Length(pub i64);
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub enum Line {
         Text(i64),
         Nested(Box<Line>),
     }
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::ast::Line)]
     pub struct Page {
         pub placed: Vec<(Length, Line)>,
@@ -30,7 +30,7 @@ mod ast {
     }
 
     pub mod v {
-        ast::visitor!(crate::ast::Line, crate::ast::Page);
+        visiting::define_visit!(crate::ast::Line, crate::ast::Page);
     }
 }
 
@@ -87,19 +87,19 @@ fn a_node_counts_itself_and_its_children() {
 
 // ── when two tuple shapes of one arity overlap ───────────────────────────────────────────────────
 mod collides {
-    use ast::Ast;
+    use visiting::Visiting;
 
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Mark(pub i64);
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub enum Node {
         N(i64),
     }
 
     /// Two shapes of one arity, which an earlier design could not give separate impls: they are the
     /// same tuple impl at `(Here, Here)` and `(Skip, Here)`.
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::collides::Node)]
     pub struct Holder {
         pub both: Vec<(Node, Node)>,
@@ -107,7 +107,7 @@ mod collides {
     }
 
     pub mod v {
-        ast::visitor!(crate::collides::Node, crate::collides::Holder);
+        visiting::define_visit!(crate::collides::Node, crate::collides::Holder);
     }
 
     #[test]

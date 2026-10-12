@@ -3,26 +3,26 @@
 //! unreachable however the visitor is written — a hand-implemented `Visit` would not see them either.
 //! Previously silent: the walk compiled and visited nothing.
 use core::marker::PhantomData;
-use ast::Ast;
+use visiting::Visiting;
 
-#[derive(Ast)]
+#[derive(Visiting)]
 pub struct Qubit<S>(pub i64, pub PhantomData<S>);
 
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Qubit)]
 pub struct Brackets<T, S> {
     pub items: Vec<T>, // `T` is never a head — this field is a LEAF
     pub tag: PhantomData<S>,
 }
 
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Qubit, crate::Brackets)]
 pub struct Stmt<S> {
     pub b: Brackets<Qubit<S>, S>,
 }
 
 pub mod v {
-    ast::visitor!(crate::Qubit, crate::Brackets, crate::Stmt);
+    visiting::define_visit!(crate::Qubit, crate::Brackets, crate::Stmt);
 }
 
 fn main() {

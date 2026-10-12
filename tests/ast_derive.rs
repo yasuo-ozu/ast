@@ -1,42 +1,42 @@
-//! Stage 2: `#[derive(Ast)]` emits the marker impl, the metadata callback macro, and the
+//! Stage 2: `#[derive(Visiting)]` emits the marker impl, the metadata callback macro, and the
 //! macro-namespace re-export under the type's own name.
 
-use ast::Ast;
 use core::marker::PhantomData;
+use visiting::Visiting;
 
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Stmt)]
 pub enum Expr<S> {
     Stmt(Box<Stmt<S>>),
     Other(PhantomData<S>),
 }
 
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Expr)]
 pub enum Stmt<S> {
     Expr(Box<Expr<S>>),
     Other(PhantomData<S>),
 }
 
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Expr)]
 pub struct Wrap<S> {
     pub inner: Expr<S>,
 }
 
-#[derive(Ast)]
+#[derive(Visiting)]
 pub struct Inner<S>(pub PhantomData<S>);
 
 // `#[subast(..)]` records this type's sub-AST children + their resolvable paths. The path must be
 // fully qualified (`crate`-rooted here), so it resolves wherever the metadata macro is expanded.
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Inner)]
 pub struct Outer<S> {
     pub child: Inner<S>,
 }
 
-/// `Ast` (the marker trait) is implemented.
-fn assert_is_ast<T: Ast>() {}
+/// `Visiting` (the marker trait) is implemented.
+fn assert_is_ast<T: Visiting>() {}
 
 #[test]
 fn marker_trait_is_implemented() {
@@ -47,9 +47,9 @@ fn marker_trait_is_implemented() {
 
 #[test]
 fn repeater_is_implemented_on_the_type_itself() {
-    // `#[derive(Ast)]` impls `Repeater<N>` on the AST type directly (no separate leaker host).
+    // `#[derive(Visiting)]` impls `Repeater<N>` on the AST type directly (no separate leaker host).
     // `Wrap { inner: Expr<S> }` has one context-dependent field, so `Repeater<0>` resolves.
-    fn leaked0<T: ast::Repeater<0>>() -> core::marker::PhantomData<T::Type> {
+    fn leaked0<T: visiting::Repeater<0>>() -> core::marker::PhantomData<T::Type> {
         core::marker::PhantomData
     }
     let _ = leaked0::<Wrap<()>>();

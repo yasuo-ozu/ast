@@ -21,7 +21,7 @@ pub(crate) struct BuildInput {
     /// through any number of generations.
     pub(crate) inherited: Vec<SubEntry>,
     /// The base visitor's generic-param union (when inheriting), supplied by the base's
-    /// `__ast_visited` macro, so the new trait can reference `base::Visit<..>` with the *base's*
+    /// `__visiting_visited` macro, so the new trait can reference `base::Visit<..>` with the *base's*
     /// arity instead of the new union's.
     pub(crate) base_generics: Vec<GenericParam>,
     /// The direct base's own transitive ancestors (for multi-level `base => mid => new`), so the new
@@ -111,7 +111,7 @@ pub(crate) fn emit_decls(decls: &[Decl]) -> TokenStream {
 pub(crate) struct AncIn {
     pub(crate) path: Path,
     pub(crate) names: Vec<Ident>,
-    /// The types whose `visit_*` methods this ancestor *declares* — its own `visitor!` targets, not
+    /// The types whose `visit_*` methods this ancestor *declares* — its own `define_visit!` targets, not
     /// what it in turn inherited. An override for one of them belongs in the impl of this
     /// ancestor's trait and nowhere else, so the closure driver needs to know where each inherited
     /// type's method lives.
@@ -172,7 +172,7 @@ pub(crate) fn emit_ancestors(anc: &[AncIn]) -> TokenStream {
     quote!( #(#blocks)* )
 }
 
-/// The `__ast_visited` export — a `#[macro_export]` muncher that, when a downstream `visitor!(self =>
+/// The `__visiting_visited` export — a `#[macro_export]` muncher that, when a downstream `define_visit!(self =>
 /// New)` invokes it, appends everything this visitor can reach as `path as matchkey` (`@inh`), its
 /// param union (`@bg`), and its ancestor chain (`@an`).
 ///
@@ -198,7 +198,10 @@ pub(crate) fn emit_visited_macro(
         }))
         .collect();
     let own = emit_decls(own);
-    let vmacro = Ident::new(&format!("__ast_visited_{}", st.nonce), Span::call_site());
+    let vmacro = Ident::new(
+        &format!("__visiting_visited_{}", st.nonce),
+        Span::call_site(),
+    );
     quote! {
         // The embedded visited-type / ancestor paths may be `crate::`-rooted by design (they resolve in
         // the base's defining crate); suppress clippy's `crate_in_macro_def` for the generated macro.
@@ -214,7 +217,7 @@ pub(crate) fn emit_visited_macro(
             };
         }
         #[doc(hidden)]
-        pub use #vmacro as __ast_visited;
+        pub use #vmacro as __visiting_visited;
     }
 }
 
@@ -259,30 +262,30 @@ pub(crate) fn emit_visited_macro(
 /// dropped in silence.
 ///
 /// The module path is repeated as an argument because the body cannot name the ancestors any other
-/// way: `$crate` here is *this* crate, not the expanding one — `visitor!` reaches the proc macro
+/// way: `$crate` here is *this* crate, not the expanding one — `define_visit!` reaches the proc macro
 /// through a `macro_rules` wrapper in `visit`, and `$crate` resolves against that definition.
 /// Taking the path instead makes the expansion position-independent: every ancestor is reached as
-/// `<module>::__ast_base…`, the relay chain, which needs no crate name and no re-rooting.
+/// `<module>::__visiting_base…`, the relay chain, which needs no crate name and no re-rooting.
 ///
 /// Emitted even with no ancestors (where it expands to nothing) so that code generating a visitor
 /// can call it unconditionally.
 pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> TokenStream {
-    let name = Ident::new(&format!("__ast_impl_chain_{nonce}"), Span::call_site());
+    let name = Ident::new(&format!("__visiting_impl_chain_{nonce}"), Span::call_site());
     // The re-exports live one module down, so `use path::to::visit::*;` brings in none of them.
     let chain_mod = Ident::new(CHAIN_MOD, Span::call_site());
-    let check = Ident::new(&format!("__ast_anc_{nonce}_check"), Span::call_site());
+    let check = Ident::new(&format!("__visiting_anc_{nonce}_check"), Span::call_site());
     let relay = Ident::new(BASE_RELAY, Span::call_site());
     let per: Vec<Ident> = (0..ancestors.len())
-        .map(|i| Ident::new(&format!("__ast_anc_{nonce}_{i}"), Span::call_site()))
+        .map(|i| Ident::new(&format!("__visiting_anc_{nonce}_{i}"), Span::call_site()))
         .collect();
     // Re-exported beside `impl_chain`, under names without the nonce, so the body can reach them as
-    // `<module>::__ast_anc_0!`. A bare name would do for a caller in this crate — a `#[macro_export]`
+    // `<module>::__visiting_anc_0!`. A bare name would do for a caller in this crate — a `#[macro_export]`
     // macro is in its own crate's textual scope — but not for one in another crate, and `$crate` here
     // means this crate. The module path the caller passes is the only spelling that works everywhere.
     let per_pub: Vec<Ident> = (0..ancestors.len())
-        .map(|i| Ident::new(&format!("__ast_anc_{i}"), Span::call_site()))
+        .map(|i| Ident::new(&format!("__visiting_anc_{i}"), Span::call_site()))
         .collect();
-    let check_pub = Ident::new("__ast_anc_check", Span::call_site());
+    let check_pub = Ident::new("__visiting_anc_check", Span::call_site());
     // Per declared type: the two method names and the alias the argument's type is named by. The
     // alias, not the type's own path, because the body is expanded in whatever crate invokes
     // `impl_chain!` and a `crate::`-rooted path would resolve there.
@@ -290,7 +293,7 @@ pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> To
         a.declares
             .iter()
             .map(|d| {
-                let alias = Ident::new(&format!("__ast_ty_{}", d.ident), Span::call_site());
+                let alias = Ident::new(&format!("__visiting_ty_{}", d.ident), Span::call_site());
                 let args = &d.args;
                 (
                     Side::SHARED.method(&d.ident),
@@ -474,15 +477,15 @@ pub(crate) fn base_host_crate(base: &Path) -> Option<Ident> {
 
 /// The name each visitor module re-exports its direct base under, so an ancestor is reachable
 /// through the chain rather than by its own path. A base module that is private, or that a
-/// downstream crate cannot otherwise name, is still reachable as `<base>::__ast_base`.
-pub(crate) const BASE_RELAY: &str = "__ast_base";
+/// downstream crate cannot otherwise name, is still reachable as `<base>::__visiting_base`.
+pub(crate) const BASE_RELAY: &str = "__visiting_base";
 
 /// The submodule each visitor module keeps its chain macros in. They are callable — the tests and
-/// any generated code reach them as `<module>::__ast_chain::impl_chain!` — but a glob import of the
+/// any generated code reach them as `<module>::__visiting_chain::impl_chain!` — but a glob import of the
 /// visitor module takes this name alone, not what is inside it.
-pub(crate) const CHAIN_MOD: &str = "__ast_chain";
+pub(crate) const CHAIN_MOD: &str = "__visiting_chain";
 
-/// The path to the ancestor `depth` links above `base`, walked through the `__ast_base` re-exports:
+/// The path to the ancestor `depth` links above `base`, walked through the `__visiting_base` re-exports:
 /// `depth` 0 is `base` itself, 1 is its base, and so on.
 ///
 /// This is what lets an ancestor chain cross a crate boundary without any path arithmetic: every
@@ -503,7 +506,7 @@ pub(crate) fn base_relay(base: &Path, depth: usize) -> Path {
 /// Resolve a transitive ancestor path that an *upstream* intermediate recorded **relative to its own
 /// module** into one the *downstream* extender can resolve, using the direct `base` path. Downstream,
 /// `base` is the path the extender named the intermediate by (e.g. `other_crate::inherit::mid_ss`), and
-/// the intermediate's `visitor!()` was invoked *inside that module* — so the ancestor's leading
+/// the intermediate's `define_visit!()` was invoked *inside that module* — so the ancestor's leading
 /// relative segment resolves against `base`:
 ///   - `crate::REST` → `<host>::REST`   (host = `base`'s first segment, the upstream crate)
 ///   - `super::REST` → pop one trailing segment of `base` per leading `super`, then append `REST`
@@ -511,7 +514,7 @@ pub(crate) fn base_relay(base: &Path, depth: usize) -> Path {
 ///
 /// A path already concrete (external-crate-rooted or leading `::`) — or a bare ident — is left alone.
 /// Only called for a cross-crate base (`base_host_crate(base).is_some()`); same-crate chains, which
-/// resolve in place, keep their recorded paths. This is why a `super`/`self`-relative `visitor!` entry
+/// resolve in place, keep their recorded paths. This is why a `super`/`self`-relative `define_visit!` entry
 /// path (not just the canonical `crate::`-rooted one) now works cross-crate.
 pub(crate) fn requalify_ancestor(anc: &Path, base: &Path) -> Path {
     if anc.leading_colon.is_some() {
@@ -524,7 +527,7 @@ pub(crate) fn requalify_ancestor(anc: &Path, base: &Path) -> Path {
     if !matches!(first.arguments, PathArguments::None) {
         return anc.clone();
     }
-    // `base`'s segments ARE the intermediate's module path (the `visitor!()` ran inside it).
+    // `base`'s segments ARE the intermediate's module path (the `define_visit!()` ran inside it).
     let base_mod: Vec<PathSegment> = base.segments.iter().cloned().collect();
     let join = |prefix: &[PathSegment], tail: &[PathSegment]| -> Path {
         let mut segments = Punctuated::new();

@@ -11,15 +11,15 @@
 
 Walk a syntax tree you derived.
 
-Put `#[derive(Ast)]` on your nodes, list them in `visitor!`, and you get a visitor over them: one
+Put `#[derive(Visiting)]` on your nodes, list them in `define_visit!`, and you get a visitor over them: one
 `visit_*` method per type, each with a body that already descends. One example carries the whole
 API — a closure, a visitor with state, editing a list, and extending a visitor:
 
 ```rust
-use ast::{Ast, SeqEdit};
+use visiting::{Visiting, SeqEdit};
 
 // ── the nodes ───────────────────────────────────────────────────────────────────────────────────
-#[derive(Ast)]
+#[derive(Visiting)]
 pub enum Expr {
     Lit(u32),
     Neg(Box<Expr>),
@@ -29,20 +29,20 @@ pub enum Expr {
 
 // `#[subast]` names a type this visitor should follow but does not list; `#[skip]` takes a field
 // out of the walk entirely.
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Expr)]
 pub struct Stmt {
     pub e: Expr,
 }
 
 // ── the visitors ────────────────────────────────────────────────────────────────────────────────
-// List a type in one `visitor!` only. To cover more, extend the visitor you have: `base::Visit`
+// List a type in one `define_visit!` only. To cover more, extend the visitor you have: `base::Visit`
 // becomes a supertrait of `ext::Visit`, so a pass written against the base still runs here.
 pub mod base {
-    ast::visitor!(crate::Expr);
+    visiting::define_visit!(crate::Expr);
 }
 pub mod ext {
-    ast::visitor!(crate::base => crate::Stmt);
+    visiting::define_visit!(crate::base => crate::Stmt);
 }
 
 // ── a visitor carrying state ────────────────────────────────────────────────────────────────────
@@ -118,16 +118,16 @@ as `impl base::VisitMut for Depth {}` does above.
 
 ## Using it through another crate
 
-The code a node emits names `::ast`. If you reach this crate through a facade that re-exports it,
+The code a node emits names `::visiting`. If you reach this crate through a facade that re-exports it,
 name that instead:
 
 ```rust,ignore
-#[derive(Ast)]
-#[ast(::my_crate)]
+#[derive(Visiting)]
+#[visiting(::my_crate)]
 pub enum Expr { Lit(u32) }
 ```
 
-`visitor!` needs no such hint — it finds the crate on its own.
+`define_visit!` needs no such hint — it finds the crate on its own.
 
 ## License
 

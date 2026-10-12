@@ -4,7 +4,7 @@ error: a `#[seq]` field's container is an array/slice — not structurally edita
 15 |     pub items: [Leaf<S>; 3],
    |                ^^^^^^^^^^^^
 ...
-19 |     ast::visitor!(crate::Wrap, crate::Leaf);
-   |     --------------------------------------- in this macro invocation
+19 |     visiting::define_visit!(crate::Wrap, crate::Leaf);
+   |     ------------------------------------------------- in this macro invocation
    |
-   = note: this error originates in the macro `crate::Wrap` which comes from the expansion of the macro `ast::visitor` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `crate::Wrap` which comes from the expansion of the macro `visiting::define_visit` (in Nightly builds, run with -Z macro-backtrace for more info)

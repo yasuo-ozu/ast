@@ -1,9 +1,9 @@
 error: `visit_nonsense` is not a method of any visitor this one extends; a method of its own trait belongs in your `impl Visit`
   --> tests/ui/impl_chain_unknown_method.rs:27:1
    |
-27 | / top::__ast_chain::impl_chain! { top; P;
+27 | / top::__visiting_chain::impl_chain! { top; P;
 28 | |     fn visit_nonsense(&mut self, i) { let _ = i; }
 29 | | }
    | |_^
    |
-   = note: this error originates in the macro `top::__ast_chain::__ast_anc_check` which comes from the expansion of the macro `top::__ast_chain::impl_chain` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `top::__visiting_chain::__visiting_anc_check` which comes from the expansion of the macro `top::__visiting_chain::impl_chain` (in Nightly builds, run with -Z macro-backtrace for more info)

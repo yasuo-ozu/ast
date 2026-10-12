@@ -20,12 +20,12 @@
 /// Keep it in step with the `ui` job in `.github/workflows/ci.yml`.
 pub const BLESSED: &str = "1.90.0";
 
-/// Whether the UI fixtures should run: only on [`BLESSED`], or whenever `AST_UI=1` forces them
+/// Whether the UI fixtures should run: only on [`BLESSED`], or whenever `VISITING_UI=1` forces them
 /// (which is how you see the mismatch when re-blessing for a new pin).
 ///
 /// Returns `false` after printing why, so a caller can `return` and leave the test passing.
 pub fn should_run(suite: &str) -> bool {
-    if std::env::var_os("AST_UI").map_or(false, |v| v != "0") {
+    if std::env::var_os("VISITING_UI").map_or(false, |v| v != "0") {
         return true;
     }
     match active_version() {
@@ -35,7 +35,7 @@ pub fn should_run(suite: &str) -> bool {
             println!(
                 "skipping the `{suite}` UI fixtures: they are blessed against rustc {BLESSED}, and \
                  this is rustc {found}. Run them with `cargo +{BLESSED} test \
-                 --all-features --test {suite}`, or set AST_UI=1 to run them here anyway."
+                 --all-features --test {suite}`, or set VISITING_UI=1 to run them here anyway."
             );
             false
         }

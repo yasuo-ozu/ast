@@ -1,9 +1,9 @@
 [package]
-name = "ast"
+name = "visiting"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.61"
-description = "Walk a derived syntax tree: the Ast derive and the visitor! generator"
+description = "Walk a derived syntax tree: the Visiting derive and the define_visit! generator"
 license = "MIT"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
 repository = "https://github.com/yasuo-ozu/ast"
@@ -21,7 +21,7 @@ path = "lib.rs"
 version_check = "0.9"
 
 [dependencies]
-ast-macro = { path = "macro", version = "0.1.0" }
+visiting-macro = { path = "macro", version = "0.1.0" }
 
 [dev-dependencies]
 trybuild = "1.0"

@@ -43,7 +43,7 @@ fn discover_followed(
                 }
                 if let Some(e) = subast.iter().find(|e| &e.key == head) {
                     // Fetch only when the entry's *real* type isn't visited/inherited (else a method,
-                    // already fetched under its `visitor!(..)` path — even when the head is aliased).
+                    // already fetched under its `define_visit!(..)` path — even when the head is aliased).
                     if !method_set.contains(&last_ident(&e.path).to_string()) {
                         out.push(e.path.clone());
                     }

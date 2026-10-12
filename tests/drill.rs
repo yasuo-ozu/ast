@@ -4,19 +4,19 @@
 
 // Drill through a single unlisted intermediate (`Cast`) to reach a visited `Type`.
 mod basic {
-    use ast::Ast;
     use core::marker::PhantomData;
+    use visiting::Visiting;
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub enum Type<S> {
         Unit(PhantomData<S>),
     }
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::basic::Type)]
     pub struct Cast<S>(pub Type<S>);
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::basic::Cast)]
     pub enum Expr<S> {
         Cast(Cast<S>),
@@ -24,7 +24,7 @@ mod basic {
     }
 
     pub mod visit {
-        ast::visitor!(super::Expr, super::Type);
+        visiting::define_visit!(super::Expr, super::Type);
     }
 
     fn sample() -> Expr<()> {
@@ -80,24 +80,24 @@ mod basic {
 
 // A chain of unlisted intermediates, drilling inside containers, and a finite dead-end.
 mod chain {
-    use ast::Ast;
     use core::marker::PhantomData;
+    use visiting::Visiting;
 
     // Chain: Expr -> Wrap -> Cast -> Type
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub enum Type<S> {
         Unit(PhantomData<S>),
     }
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::chain::Type)]
     pub struct Cast<S>(pub Type<S>);
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::chain::Cast)]
     pub struct Wrap<S>(pub Cast<S>);
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::chain::Wrap)]
     pub enum Expr<S> {
         W(Wrap<S>),
@@ -105,7 +105,7 @@ mod chain {
     }
 
     pub mod chain {
-        ast::visitor!(super::Expr, super::Type);
+        visiting::define_visit!(super::Expr, super::Type);
     }
 
     #[test]
@@ -116,16 +116,16 @@ mod chain {
         assert_eq!(types, 1, "reached Type through Wrap -> Cast");
     }
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub enum Leaf<S> {
         U(PhantomData<S>),
     }
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::chain::Leaf)]
     pub struct Item<S>(pub Leaf<S>);
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::chain::Item)]
     pub struct Block<S> {
         pub items: Vec<Item<S>>,
@@ -133,7 +133,7 @@ mod chain {
     }
 
     pub mod container {
-        ast::visitor!(super::Block, super::Leaf);
+        visiting::define_visit!(super::Block, super::Leaf);
     }
 
     #[test]
@@ -151,10 +151,10 @@ mod chain {
     }
 
     // Finite dead-end: an unlisted intermediate reaching no visited type — a no-op, not an error.
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub struct Dead<S>(pub i64, pub PhantomData<S>);
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::chain::Dead)]
     pub enum ExprD<S> {
         D(Dead<S>),
@@ -162,7 +162,7 @@ mod chain {
     }
 
     pub mod deadend {
-        ast::visitor!(super::ExprD);
+        visiting::define_visit!(super::ExprD);
     }
 
     #[test]
@@ -179,13 +179,13 @@ mod chain {
 
 // Regression fixes: aliased #[subast] on a visited type, a user type named `Option`, Box<Option<T>>.
 mod fixes {
-    use ast::Ast;
     use core::marker::PhantomData;
+    use visiting::Visiting;
 
     mod other {
-        use ast::Ast;
         use core::marker::PhantomData;
-        #[derive(Debug, Ast)]
+        use visiting::Visiting;
+        #[derive(Debug, Visiting)]
         pub enum Real<S> {
             U(PhantomData<S>),
         }
@@ -194,7 +194,7 @@ mod fixes {
     use other::Real;
     use other::Real as Aliased;
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::fixes::other::Real as Aliased)]
     pub enum Expr<S> {
         R(Aliased<S>),
@@ -202,7 +202,7 @@ mod fixes {
     }
 
     pub mod va {
-        ast::visitor!(crate::fixes::Expr, crate::fixes::other::Real);
+        visiting::define_visit!(crate::fixes::Expr, crate::fixes::other::Real);
     }
 
     #[test]
@@ -216,21 +216,21 @@ mod fixes {
         );
     }
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub enum Leaf<S> {
         U(PhantomData<S>),
     }
 
     mod weird {
         use super::Leaf;
-        use ast::Ast;
+        use visiting::Visiting;
         // A user type whose name collides with the `Option` container keyword.
-        #[derive(Debug, Ast)]
+        #[derive(Debug, Visiting)]
         #[subast(crate::fixes::Leaf)]
         pub struct Option<S>(pub Leaf<S>);
     }
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::fixes::weird::Option)]
     pub enum Outer<S> {
         O(weird::Option<S>),
@@ -238,7 +238,7 @@ mod fixes {
     }
 
     pub mod vw {
-        ast::visitor!(crate::fixes::Outer, crate::fixes::Leaf);
+        visiting::define_visit!(crate::fixes::Outer, crate::fixes::Leaf);
     }
 
     #[test]
@@ -254,19 +254,19 @@ mod fixes {
 
     // A distinct leaf type, since two visitors over the same type in one crate would emit
     // duplicate inherent `visit`/`visit_mut`.
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub enum LeafB<S> {
         U(PhantomData<S>),
     }
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::fixes::LeafB)]
     pub struct Holder<S> {
         pub boxed_opt: Box<Option<LeafB<S>>>,
     }
 
     pub mod vh {
-        ast::visitor!(crate::fixes::Holder, crate::fixes::LeafB);
+        visiting::define_visit!(crate::fixes::Holder, crate::fixes::LeafB);
     }
 
     #[test]
@@ -306,24 +306,24 @@ mod fixes {
 
 // Two same-last-segment intermediates (`a::Cast`/`b::Cast`) fetched distinctly by full path.
 mod paths {
-    use ast::Ast;
     use core::marker::PhantomData;
+    use visiting::Visiting;
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub enum Type<S> {
         Unit(PhantomData<S>),
     }
 
     pub mod a {
-        use ast::Ast;
-        #[derive(Debug, Ast)]
+        use visiting::Visiting;
+        #[derive(Debug, Visiting)]
         #[subast(crate::paths::Type)]
         pub struct Cast<S>(pub crate::paths::Type<S>);
     }
 
     pub mod b {
-        use ast::Ast;
-        #[derive(Debug, Ast)]
+        use visiting::Visiting;
+        #[derive(Debug, Visiting)]
         #[subast(crate::paths::Type)]
         pub struct Cast<S>(pub crate::paths::Type<S>);
     }
@@ -331,7 +331,7 @@ mod paths {
     use a::Cast;
     use b::Cast as BCast;
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::paths::a::Cast, crate::paths::b::Cast as BCast)]
     pub enum Expr<S> {
         A(Cast<S>),
@@ -339,7 +339,7 @@ mod paths {
     }
 
     pub mod visit {
-        ast::visitor!(super::Expr, super::Type);
+        visiting::define_visit!(super::Expr, super::Type);
     }
 
     #[test]

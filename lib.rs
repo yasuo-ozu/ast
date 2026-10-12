@@ -1,5 +1,5 @@
 // Every doctest here spells its nodes out at the crate root and then names them in
-// `visitor!(crate::Expr)`, so the `fn main` is doing real work: without it rustdoc wraps the whole
+// `define_visit!(crate::Expr)`, so the `fn main` is doing real work: without it rustdoc wraps the whole
 // snippet, the nodes become items *inside* `main`, and `crate::Expr` no longer resolves
 // (`error[E0433]: could not find Expr in the crate root`). The lint does not model that.
 #![allow(clippy::needless_doctest_main)]
@@ -7,10 +7,10 @@
 //!
 //! # What lives here
 //!
-//! `#[derive(Ast)]` and `visitor!` write their code into *your* crate. This crate holds the pieces
+//! `#[derive(Visiting)]` and `define_visit!` write their code into *your* crate. This crate holds the pieces
 //! that code calls into. You rarely name them yourself:
 //!
-//! * [`Ast`] — a marker trait, with no methods. `#[derive(Ast)]` implements it, and that is how
+//! * [`Visiting`] — a marker trait, with no methods. `#[derive(Visiting)]` implements it, and that is how
 //!   generic code says "is an AST node".
 //! * [`SeqView`]/[`SeqEdit`] and [`OptView`]/[`OptEdit`] — the slot views a `#[seq]`/`#[opt]`
 //!   method is handed, plus [`Elements`] for iterating one. You *do* name these, in an override.
@@ -21,36 +21,38 @@
 
 #[doc(hidden)]
 pub mod _imp {
-    pub use ast_macro;
+    pub use visiting_macro;
 }
 
 /// The crate's own items, under the name the generated code reaches them by.
 ///
-/// `visitor!` binds this as `__ast_rt` in the module it expands into, so the code it writes names
+/// `define_visit!` binds this as `__visiting_rt` in the module it expands into, so the code it writes names
 /// the crate through the macro's `$crate` rather than by name — which is what lets a facade
 /// re-export this crate without its users depending on it directly. `use $crate as ..` is not
 /// allowed, so the alias needs a module to point at.
 #[doc(hidden)]
 pub mod visit {
     // Named one by one rather than re-exported with a glob: a glob would also carry `visit` itself
-    // (making `ast::visit::visit::visit::…` a valid path) and `_imp`. This is the whole surface the
-    // generated code reaches — `#root::visit::{Ast, Repeater}` from the derive, `__ast_rt::{..}`
-    // from `visitor!`.
-    pub use super::{visitor, walk, Ast, Elements, OptEdit, OptView, Repeater, SeqEdit, SeqView};
+    // (making `visiting::visit::visit::visit::…` a valid path) and `_imp`. This is the whole surface the
+    // generated code reaches — `#root::visit::{Visiting, Repeater}` from the derive, `__visiting_rt::{..}`
+    // from `define_visit!`.
+    pub use super::{
+        define_visit, walk, Elements, OptEdit, OptView, Repeater, SeqEdit, SeqView, Visiting,
+    };
 }
 
-/// Marks a type as an AST node and emits the metadata [`visitor!`] reads.
+/// Marks a type as an AST node and emits the metadata [`define_visit!`] reads.
 ///
 /// # Types are matched by their last path segment
 ///
 /// **This is the main rule to remember.** A field's type is known by the last part of its path.
-/// Nothing else is read. So `other::Node`, `crate::ast::Node` and plain `Node` all mean the same
+/// Nothing else is read. So `other::Node`, `crate::visiting::Node` and plain `Node` all mean the same
 /// `Node` here. This derive sees one type at a time. It cannot look a path up.
 ///
 /// If two types share a name, give one an alias and write the alias in the field:
 ///
 /// ```ignore
-/// #[derive(Ast)]
+/// #[derive(Visiting)]
 /// #[subast(crate::other::Node as OtherNode)]
 /// pub struct Wrapper {
 ///     inner: OtherNode,
@@ -61,20 +63,20 @@ pub mod visit {
 ///
 /// | attribute | on | meaning |
 /// |---|---|---|
-/// | `#[subast(path, ..)]` | the type | types this node reaches that `visitor!(..)` does **not** list, so the walk can pass through them. A listed type needs no entry. |
+/// | `#[subast(path, ..)]` | the type | types this node reaches that `define_visit!(..)` does **not** list, so the walk can pass through them. A listed type needs no entry. |
 /// | `#[seq]` / `#[opt]` | a field | reach the parent slot through a [`SeqView`] or [`OptView`]. Plain `Vec<T>` / `Option<T>` only. |
 /// | `#[skip]` | a field | never walk into this field, whatever its type. An error together with `#[seq]` or `#[opt]`. |
 ///
 /// Take a field's type and remove wrappers like `Box`, `Vec` and `Option`. What is left is the
 /// **head**. The walk goes into a field when the visitor knows its head. It knows a type if you
-/// listed it in `visitor!(..)`, or if it comes from a base visitor. Those need no `#[subast(..)]`
+/// listed it in `define_visit!(..)`, or if it comes from a base visitor. Those need no `#[subast(..)]`
 /// entry. That list is only for types the walk passes *through* on the way to a known one.
 ///
 /// A `#[subast(..)]` path must start at a crate: `crate::path::to::Type`, or
 /// `other_crate::path::Type` for a type in another crate. A plain name, or a `self::`/`super::`
 /// path, is an error. Here is why. This derive puts the path inside a macro. That macro runs later,
 /// in the module where the visitor lives. A short path would mean something else there.
-/// `visitor!(..)` has no such rule. Only `#[subast(..)]` does.
+/// `define_visit!(..)` has no such rule. Only `#[subast(..)]` does.
 ///
 /// A `#[seq]` or `#[opt]` field must be a plain `Vec<T>` or `Option<T>`. A wrapped one, like
 /// `Option<Box<T>>`, cannot be edited in place. The macro tells you so, instead of building a view
@@ -83,7 +85,7 @@ pub mod visit {
 /// `#[skip]` takes a field out of the walk, whatever its type:
 ///
 /// ```ignore
-/// #[derive(Ast)]
+/// #[derive(Visiting)]
 /// pub enum Expr<S> {
 ///     // A `&mut` walk cannot descend into this field: `&mut Box<Stmt<'static, S>>` is
 ///     // invariant in the lifetime, so there is no way in. Saying so here gives a clear error
@@ -92,13 +94,13 @@ pub mod visit {
 ///     Lit(PhantomData<S>),
 /// }
 /// ```
-pub use ast_macro::Ast;
+pub use visiting_macro::Visiting;
 
 /// Define a visitor over the given AST types. Put it in its own empty module:
 ///
 /// ```ignore
 /// pub mod my_visitor {
-///     ast::visitor!(Type, Expr);          // or: visitor!(super::base => Stmt);
+///     visiting::define_visit!(Type, Expr);          // or: define_visit!(super::base => Stmt);
 /// }
 /// ```
 ///
@@ -110,13 +112,13 @@ pub use ast_macro::Ast;
 /// Take a `Doc` holding a list of `Item`s:
 ///
 /// ```ignore
-/// #[derive(Ast)]
+/// #[derive(Visiting)]
 /// pub struct Doc { #[seq] items: Vec<Item> }
 ///
-/// #[derive(Ast)]
+/// #[derive(Visiting)]
 /// pub struct Item(u32);
 ///
-/// pub mod visit { ast::visitor!(crate::Doc, crate::Item); }
+/// pub mod visit { visiting::define_visit!(crate::Doc, crate::Item); }
 /// ```
 ///
 /// The module is about a thousand lines. In outline:
@@ -168,18 +170,18 @@ pub use ast_macro::Ast;
 ///
 /// ```
 /// mod grammar {
-///     use ast::Ast;
+///     use visiting::Visiting;
 ///
-///     #[derive(Ast)]
+///     #[derive(Visiting)]
 ///     #[subast(crate::grammar::Expr)]
 ///     pub enum Expr { Lit(u32), Neg(Box<Expr>), Many(#[seq] Vec<Expr>) }
 ///
-///     pub mod visit { ast::visitor!(super::Expr); }
+///     pub mod visit { visiting::define_visit!(super::Expr); }
 /// }
 ///
 /// fn main() {
 ///     use grammar::{visit, Expr};
-///     use ast::SeqEdit;
+///     use visiting::SeqEdit;
 ///
 ///     // A closure sees one node type.
 ///     let mut n = 0;
@@ -276,10 +278,10 @@ pub use ast_macro::Ast;
 /// A tuple holding a visitor is rejected:
 ///
 /// ```compile_fail
-/// use ast::Ast;
-/// #[derive(Ast)]
+/// use visiting::Visiting;
+/// #[derive(Visiting)]
 /// pub enum Expr { Lit(u32) }
-/// pub mod visit { ast::visitor!(crate::Expr); }
+/// pub mod visit { visiting::define_visit!(crate::Expr); }
 ///
 /// struct Pass;
 /// impl visit::Visit for Pass {}
@@ -298,16 +300,16 @@ pub use ast_macro::Ast;
 ///
 /// # Extending a visitor
 ///
-/// A type may be listed in only one `visitor!` per crate, so to cover more types you add to the
+/// A type may be listed in only one `define_visit!` per crate, so to cover more types you add to the
 /// visitor you already have. Name the base module, then `=>`, then the new types:
 ///
 /// ```ignore
-/// #[derive(Ast)] pub enum Type<S> { .. }
-/// #[derive(Ast)] pub enum Expr<S> { Typed(Box<Type<S>>), .. }
-/// #[derive(Ast)] pub enum Stmt<S> { E(Box<Expr<S>>), .. }
+/// #[derive(Visiting)] pub enum Type<S> { .. }
+/// #[derive(Visiting)] pub enum Expr<S> { Typed(Box<Type<S>>), .. }
+/// #[derive(Visiting)] pub enum Stmt<S> { E(Box<Expr<S>>), .. }
 ///
-/// pub mod base { ast::visitor!(super::Type, super::Expr); }
-/// pub mod ext  { ast::visitor!(super::base => super::Stmt); }
+/// pub mod base { visiting::define_visit!(super::Type, super::Expr); }
+/// pub mod ext  { visiting::define_visit!(super::base => super::Stmt); }
 /// ```
 ///
 /// `base::Visit` is a supertrait of `ext::Visit`, so one visitor implements both and has a method
@@ -330,7 +332,7 @@ pub use ast_macro::Ast;
 ///   for its list, and those nodes reach the base's `visit_*` through the supertrait.
 /// * Chains can be as long as you like: `base => mid => new`.
 /// * The new visitor may take more generic parameters than its base.
-/// * Several bases at once work: `visitor!(a, b => Stmt)`.
+/// * Several bases at once work: `define_visit!(a, b => Stmt)`.
 ///
 /// A closure reaches an inherited type as readily as one of your own, so the short spelling keeps
 /// working however deep the chain is:
@@ -340,7 +342,7 @@ pub use ast_macro::Ast;
 /// ```
 ///
 /// One limit: a type from the base gets no `#[seq]`/`#[opt]` view here, because its `visit_*`
-/// method lives in the base. Mark that field in the base's own `visitor!` instead, or drop the
+/// method lives in the base. Mark that field in the base's own `define_visit!` instead, or drop the
 /// marker and let the walk take the elements one at a time.
 ///
 /// You have to implement **every** trait in the chain, even the ancestors whose nodes you never
@@ -355,38 +357,38 @@ pub use ast_macro::Ast;
 ///
 /// ## Naming an ancestor you cannot reach
 ///
-/// Each module re-exports its base as `__ast_base`, so the ancestor `n` links up is
-/// `base_module::__ast_base::..` repeated `n` times. That path goes through the chain rather than
+/// Each module re-exports its base as `__visiting_base`, so the ancestor `n` links up is
+/// `base_module::__visiting_base::..` repeated `n` times. That path goes through the chain rather than
 /// to the module itself, so it resolves even when the ancestor is private, or sits in a crate you
 /// do not depend on:
 ///
 /// ```ignore
-/// impl<S> up::visit_mid::__ast_base::Visit<S> for MyPass { .. }   // `up::visit` is private
+/// impl<S> up::visit_mid::__visiting_base::Visit<S> for MyPass { .. }   // `up::visit` is private
 /// ```
 ///
 /// # Rules
 ///
-/// Every listed type needs `#[derive(Ast)]`. That derive writes the metadata this macro reads.
+/// Every listed type needs `#[derive(Visiting)]`. That derive writes the metadata this macro reads.
 ///
-/// A type is known by the last segment of its path (see [`Ast`]), and the generated names come
+/// A type is known by the last segment of its path (see [`Visiting`]), and the generated names come
 /// from that segment, so two listed types ending in the same name are rejected.
 ///
-/// A type may be listed in only one `visitor!` per crate. Each listing gives it its own
+/// A type may be listed in only one `define_visit!` per crate. Each listing gives it its own
 /// `visit`/`visit_mut` method, so a second one is `E0592: duplicate definitions`. See
 /// [Extending a visitor](#extending-a-visitor).
 #[macro_export]
-macro_rules! visitor {
+macro_rules! define_visit {
     ($($t:tt)*) => {
         // The generated items name this crate through the alias rather than by its own name, so a
-        // grammar reaching `visitor!` through a facade needs no direct dependency on it.
+        // grammar reaching `define_visit!` through a facade needs no direct dependency on it.
         #[doc(hidden)]
         #[allow(unused_imports)]
-        use $crate::visit as __ast_rt;
-        $crate::_imp::ast_macro::__visitor_entry! { @root { $crate } $($t)* }
+        use $crate::visit as __visiting_rt;
+        $crate::_imp::visiting_macro::__visitor_entry! { @root { $crate } $($t)* }
     };
 }
 
-/// Marker trait implemented by every type carrying `#[derive(Ast)]`.
+/// Marker trait implemented by every type carrying `#[derive(Visiting)]`.
 ///
 /// It carries no methods; its only purpose is to let generic code (and the `#[visitor]` generator)
 /// bound on "is an AST node".
@@ -395,15 +397,15 @@ macro_rules! visitor {
     diagnostic::on_unimplemented(
         message = "`{Self}` is not an AST node",
         label = "not an AST node",
-        note = "add `#[derive(Ast)]` to `{Self}`; every `#[subast(..)]` entry has to be one"
+        note = "add `#[derive(Visiting)]` to `{Self}`; every `#[subast(..)]` entry has to be one"
     )
 )]
-pub trait Ast {}
+pub trait Visiting {}
 
 /// Plumbing, so generated code can name a type it cannot write a path to.
 ///
 /// A node's field type may only be nameable where the node was defined — behind a private module,
-/// or through an alias. `#[derive(Ast)]` records each such type as an impl of this trait on the
+/// or through an alias. `#[derive(Visiting)]` records each such type as an impl of this trait on the
 /// node, numbered in declaration order, and the generated visitor writes
 /// `<Node as Repeater<0>>::Type` instead of a path. You should not need to write this yourself.
 ///
@@ -443,7 +445,7 @@ pub trait Repeater<const INDEX: usize> {
 /// iterated.
 ///
 /// ```
-/// use ast::Elements;
+/// use visiting::Elements;
 /// use std::collections::BTreeMap;
 ///
 /// let v = vec![1, 2, 3];
@@ -484,7 +486,7 @@ pub trait Elements<'a, T: 'a> {
 ///
 /// [`Index`]: core::ops::Index
 /// ```
-/// use ast::SeqView;
+/// use visiting::SeqView;
 ///
 /// fn second<'a, V: SeqView<'a, i32>>(v: &'a V) -> Option<&'a i32> {
 ///     if v.len() < 2 {
@@ -509,7 +511,7 @@ pub trait SeqView<'a, T: 'a>: core::ops::Index<usize, Output = T> + Elements<'a,
 /// A [`SeqView`] that can also grow and shrink — what a `#[seq]` field's `&mut` side is handed.
 ///
 /// ```
-/// use ast::SeqEdit;
+/// use visiting::SeqEdit;
 ///
 /// // The shape a `visit_<t>_seq_mut` override takes: generic over the slot, so it works for any
 /// // container the field might be.
@@ -581,7 +583,7 @@ pub trait OptView<'a, T: 'a>: Elements<'a, T> {
 /// An [`OptView`] that can also be written — what a `#[opt]` field's `&mut` side is handed.
 ///
 /// ```
-/// use ast::OptEdit;
+/// use visiting::OptEdit;
 ///
 /// fn default_to_zero<'a, V: OptEdit<'a, i32>>(v: &'a mut V) {
 ///     if v.is_none() {
@@ -796,7 +798,7 @@ impl<'a, K: 'a, V: 'a> Elements<'a, V> for std::collections::BTreeMap<K, V> {
 }
 
 /// The descent: how an AST value hands its parts to a visitor, and the indicators that say which
-/// parts those are. The trait `visitor!` generates is the dispatch half; this is the other.
+/// parts those are. The trait `define_visit!` generates is the dispatch half; this is the other.
 ///
 /// Every traversal a generated `visit_*` performs is one [`walk::Walk::walk`] call. An indicator —
 /// computed per field from the field's *shape* — picks the impl, so the descent never names a leaf
@@ -828,7 +830,7 @@ pub mod walk {
     /// * `V` — the visitor.
     /// * `H` — the indicator, which says *which* parts of `Self` to descend into. See the table on
     ///   the [module](self) docs.
-    /// * `M` — a tag belonging to the `visitor!` module this walk is for, so two visitors over the
+    /// * `M` — a tag belonging to the `define_visit!` module this walk is for, so two visitors over the
     ///   same node do not collide.
     ///
     /// Because the shape lives in `H` rather than in the impl, one impl covers every container of a
@@ -838,7 +840,7 @@ pub mod walk {
     /// the indicator straight through — then your type works in any visitor, holding any node:
     ///
     /// ```
-    /// use ast::walk::{Thru, Walk, WalkMut};
+    /// use visiting::walk::{Thru, Walk, WalkMut};
     ///
     /// pub struct Stack<T>(Vec<T>);
     ///
@@ -869,8 +871,8 @@ pub mod walk {
         diagnostic::on_unimplemented(
             message = "`{Self}` cannot be walked at `{H}`",
             label = "this field's shape has no `Walk` impl",
-            note = "a visited node needs `#[derive(Ast)]` and an entry in the owning type's `#[subast(..)]`; \
-                a container of one needs a `Walk` impl, which `ast::visit` has for `Vec`, `VecDeque`, \
+            note = "a visited node needs `#[derive(Visiting)]` and an entry in the owning type's `#[subast(..)]`; \
+                a container of one needs a `Walk` impl, which `visiting::visit` has for `Vec`, `VecDeque`, \
                 `Option`, `Box`, maps, slices, arrays and tuples, and which a crate can add for a \
                 container of its own"
         )
@@ -1000,7 +1002,7 @@ pub mod walk {
     /// Transparent single-slot wrappers. A consumer's own wrapper joins the same way:
     ///
     /// ```
-    /// # use ast::walk::{Walk, WalkMut, Thru};
+    /// # use visiting::walk::{Walk, WalkMut, Thru};
     /// struct MyPtr<T>(Box<T>);
     /// impl<M, H, V: ?Sized, T: Walk<M, H, V>> Walk<M, Thru<H>, V> for MyPtr<T> {
     ///     fn walk(&self, v: &mut V) { <T as Walk<M, H, V>>::walk(&self.0, v) }

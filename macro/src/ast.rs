@@ -110,12 +110,12 @@ pub(crate) fn parse_subast(attrs: &[Attribute]) -> Vec<SubastEntry> {
     }
     // Every entry must be rooted, whatever it names. The path has two jobs: as a *match key* only the
     // last segment is compared, so the root is irrelevant there — but as a *fetch target* for a type
-    // `visitor!(..)` does not list, it is invoked as a macro to pull that type's definition, in the
+    // `define_visit!(..)` does not list, it is invoked as a macro to pull that type's definition, in the
     // visitor's scope, where a bare or `self::`/`super::`-relative path means something else.
     //
     // The rule is unconditional rather than applied only to fetched entries, because which entries are
-    // fetched depends on the `visitor!(..)` list — so a conditional rule would accept an attribute
-    // today and reject it when someone stops listing that type, and would report at the `visitor!`
+    // fetched depends on the `define_visit!(..)` list — so a conditional rule would accept an attribute
+    // today and reject it when someone stops listing that type, and would report at the `define_visit!`
     // invocation rather than at the attribute. A derive-emitted `pub use` could launder a relative path
     // (a `use` resolves where it is written), but only one level deep: past the first hop the alias
     // hides the module the next fetch needs, so the restriction would come back a level further from
@@ -262,10 +262,10 @@ fn for_each_field_type_of(data: &Data, f: &mut dyn FnMut(&Type)) {
     data_field_iter(data).for_each(|fld| f(&fld.ty));
 }
 
-/// `#[derive(Ast)]` expansion.
+/// `#[derive(Visiting)]` expansion.
 ///
 /// Emits:
-/// * `impl Ast for T<..> {}` (the empty marker trait from `visit`),
+/// * `impl Visiting for T<..> {}` (the empty marker trait from `visit`),
 /// * one `impl Repeater<N> for T<..>` per context-dependent field type, so it can be named
 ///   portably as `<T<..> as Repeater<N>>::Type` (external-metadata fallback; the visitor/drill path
 ///   uses `#[subast]`-resolved paths),
@@ -278,12 +278,12 @@ pub fn derive_ast(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     // A union has no fields a walk could enter, and nothing downstream handles one: accepting it
-    // here only defers the complaint to `visitor!`, which would report "no AST definitions
+    // here only defers the complaint to `define_visit!`, which would report "no AST definitions
     // resolved" — a sentence about the visitor, for a mistake in the derive.
     if let syn::Data::Union(_) = &input.data {
         abort!(
             ident,
-            "`#[derive(Ast)]` works on a struct or an enum; a union has no walkable fields"
+            "`#[derive(Visiting)]` works on a struct or an enum; a union has no walkable fields"
         );
     }
 
@@ -337,7 +337,7 @@ pub fn derive_ast(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStream {
     };
 
     // Every `#[subast]` entry must itself be a node. Without this the omission surfaces only when a
-    // `visitor!` tries to expand the entry's metadata macro, as `cannot find `X` in `$crate`` — a
+    // `define_visit!` tries to expand the entry's metadata macro, as `cannot find `X` in `$crate`` — a
     // message about a macro the user never wrote, in a module far from the attribute at fault.
     //
     // The bound names the matching FIELD's type, not the `#[subast]` path: an entry is written bare
@@ -368,10 +368,10 @@ pub fn derive_ast(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStream {
             let span = e.path.span();
             Some(quote! {
                 const _: () = {
-                    fn #{Ident::new("__ast_subast_entry_is_a_node", span)}
+                    fn #{Ident::new("__visiting_subast_entry_is_a_node", span)}
                         #impl_generics () #where_clause
                     {
-                        fn assert_node<__AstT: ?Sized + #root::visit::Ast>() {}
+                        fn assert_node<__VisitingT: ?Sized + #root::visit::Visiting>() {}
                         let _ = assert_node::<#tp>;
                     }
                 };
@@ -381,7 +381,7 @@ pub fn derive_ast(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStream {
 
     quote! {
         #[automatically_derived]
-        impl #impl_generics #root::visit::Ast for #ident #ty_generics #where_clause {}
+        impl #impl_generics #root::visit::Visiting for #ident #ty_generics #where_clause {}
 
         #(#subast_are_nodes)*
 

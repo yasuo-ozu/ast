@@ -3,17 +3,17 @@
 
 // Basic descent through Box; struct visitors, single closures, tuples of closures.
 mod basic {
-    use ast::Ast;
     use core::marker::PhantomData;
+    use visiting::Visiting;
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::basic::Stmt)]
     pub enum Expr<S> {
         Stmt(Box<Stmt<S>>),
         Other(PhantomData<S>),
     }
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::basic::Expr)]
     pub enum Stmt<S> {
         Expr(Box<Expr<S>>),
@@ -21,7 +21,7 @@ mod basic {
     }
 
     pub mod visit {
-        ast::visitor!(super::Expr, super::Stmt);
+        visiting::define_visit!(super::Expr, super::Stmt);
     }
 
     fn sample() -> Expr<()> {
@@ -77,17 +77,17 @@ mod basic {
 
 // visit_mut mirror: mutate nodes in place via closures and struct visitors.
 mod mutable {
-    use ast::Ast;
     use core::marker::PhantomData;
+    use visiting::Visiting;
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub enum Expr<S> {
         Add(Box<Expr<S>>, Box<Expr<S>>),
         Lit(i64, PhantomData<S>),
     }
 
     pub mod visit {
-        ast::visitor!(super::Expr);
+        visiting::define_visit!(super::Expr);
     }
 
     fn sample() -> Expr<()> {
@@ -141,17 +141,17 @@ mod mutable {
 // Hygiene: visited types may name params/fields like the generated machinery (`__V`, `this`, `i`).
 #[allow(non_camel_case_types)]
 mod hygiene {
-    use ast::Ast;
     use core::marker::PhantomData;
+    use visiting::Visiting;
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub enum Node<__V, __T, __H, __F, __A, __B> {
         Rec(Box<Node<__V, __T, __H, __F, __A, __B>>),
         Leaf(PhantomData<(__V, __T, __H, __F, __A, __B)>),
     }
 
     pub mod visit {
-        ast::visitor!(crate::hygiene::Node);
+        visiting::define_visit!(crate::hygiene::Node);
     }
 
     type N = Node<(), (), (), (), (), ()>;
@@ -168,14 +168,14 @@ mod hygiene {
     }
 
     // The indexed tuple-closure helper family (`__F0`/`__T0`/…) is protected by `fresh_prefix`.
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub enum Tup<__F0, __T0> {
         Rec(Box<Tup<__F0, __T0>>),
         Leaf(PhantomData<(__F0, __T0)>),
     }
 
     pub mod vtup {
-        ast::visitor!(crate::hygiene::Tup);
+        visiting::define_visit!(crate::hygiene::Tup);
     }
 
     type T = Tup<(), ()>;
@@ -193,12 +193,12 @@ mod hygiene {
 
     // Value bindings (the generated receiver `this` / scrutinee `i`) are span-isolated from user
     // idents, so a visited type may have followed fields literally named `this` and `i`.
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub enum Leaf<S> {
         U(PhantomData<S>),
     }
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::hygiene::Leaf)]
     pub struct Names<S> {
         pub this: Box<Leaf<S>>,
@@ -206,7 +206,7 @@ mod hygiene {
     }
 
     pub mod vnames {
-        ast::visitor!(crate::hygiene::Names, crate::hygiene::Leaf);
+        visiting::define_visit!(crate::hygiene::Names, crate::hygiene::Leaf);
     }
 
     #[test]
@@ -245,11 +245,11 @@ mod local_types {
 
     mod ast {
         use super::helper::Local;
-        use ast::Ast;
         use core::marker::PhantomData;
+        use visiting::Visiting;
 
         // `Local` is intentionally a leaf; `Rec` is followed via implicit self-recursion.
-        #[derive(Debug, Ast)]
+        #[derive(Debug, Visiting)]
         #[subast()]
         pub enum Expr<S> {
             Lit(Local, PhantomData<S>),
@@ -258,7 +258,7 @@ mod local_types {
     }
 
     mod vis {
-        ast::visitor!(super::ast::Expr);
+        visiting::define_visit!(super::ast::Expr);
     }
 
     #[test]
@@ -275,15 +275,15 @@ mod local_types {
 // A visited type's `where`-clause is threaded onto every generated item that names the type.
 #[allow(dead_code)]
 mod where_clause {
-    use ast::Ast;
     use core::marker::PhantomData;
+    use visiting::Visiting;
 
     pub trait Bound {}
     impl Bound for () {}
 
     // The bound is written as a resolvable path because the generated items live in `mod v` — the
     // same canonical-path requirement the `#[subast]` paths have.
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast()]
     pub enum Expr<S>
     where
@@ -294,7 +294,7 @@ mod where_clause {
     }
 
     pub mod v {
-        ast::visitor!(crate::where_clause::Expr);
+        visiting::define_visit!(crate::where_clause::Expr);
     }
 
     #[test]
@@ -308,24 +308,24 @@ mod where_clause {
 
 // A single visitor over types with different generic arities; the trait is keyed on the union.
 mod generics {
-    use ast::Ast;
     use core::marker::PhantomData;
+    use visiting::Visiting;
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::generics::BinOp)]
     pub enum Expr<S, Tokens> {
         Bin(Box<Expr<S, Tokens>>, BinOp<S>, Box<Expr<S, Tokens>>),
         Lit(i64, PhantomData<(S, Tokens)>),
     }
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     pub enum BinOp<S> {
         Add(PhantomData<S>),
         Mul(PhantomData<S>),
     }
 
     pub mod visit {
-        ast::visitor!(super::Expr, super::BinOp);
+        visiting::define_visit!(super::Expr, super::BinOp);
     }
 
     #[test]
@@ -351,12 +351,12 @@ mod generics {
 // A where-bounded param not shared by all visited types becomes a per-method generic (struct-only).
 #[allow(dead_code)]
 mod union_where_unshared {
-    use ast::Ast;
     use core::marker::PhantomData;
+    use visiting::Visiting;
 
     pub trait Bound {}
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast()]
     pub struct Bounded<S>
     where
@@ -365,7 +365,7 @@ mod union_where_unshared {
         pub _p: PhantomData<S>,
     }
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast()]
     pub struct Plain {
         pub _x: u8,
@@ -375,7 +375,7 @@ mod union_where_unshared {
         // The generated `where S: Bound` lands here, so the user trait must be in scope (a where-bound
         // naming a user trait by bare path needs importing).
         use crate::union_where_unshared::Bound;
-        ast::visitor!(
+        visiting::define_visit!(
             crate::union_where_unshared::Bounded,
             crate::union_where_unshared::Plain
         );

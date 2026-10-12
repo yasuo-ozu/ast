@@ -1,4 +1,4 @@
-//! `visitor!(base => More)`: a visitor that extends another.
+//! `define_visit!(base => More)`: a visitor that extends another.
 //!
 //! An inherited node's `Walk` impl cannot come from the base module — that one is written against the
 //! base's tag. So the extending module emits its own, against its own tag, reaching the method through
@@ -7,18 +7,18 @@
 #![allow(dead_code)]
 
 mod ast {
-    use ast::Ast;
+    use visiting::Visiting;
 
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Tag(pub i64);
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     pub enum Leaf {
         N(i64),
     }
 
     /// Reaches `Leaf` four ways at once — plain, in a `Vec`, through a `Box`, and inside a tuple.
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::ast::Leaf)]
     pub struct Mid {
         pub direct: Leaf,
@@ -27,7 +27,7 @@ mod ast {
         pub tagged: Vec<(Tag, Leaf)>,
     }
 
-    #[derive(Debug, Ast)]
+    #[derive(Debug, Visiting)]
     #[subast(crate::ast::Mid)]
     pub struct Top {
         pub mids: Vec<Mid>,
@@ -37,13 +37,13 @@ mod ast {
 use ast::{Leaf, Mid, Tag, Top};
 
 mod base {
-    ast::visitor!(crate::ast::Leaf);
+    visiting::define_visit!(crate::ast::Leaf);
 }
 mod mid {
-    ast::visitor!(super::base => crate::ast::Mid);
+    visiting::define_visit!(super::base => crate::ast::Mid);
 }
 mod top {
-    ast::visitor!(super::mid => crate::ast::Top);
+    visiting::define_visit!(super::mid => crate::ast::Top);
 }
 
 fn a_mid() -> Mid {

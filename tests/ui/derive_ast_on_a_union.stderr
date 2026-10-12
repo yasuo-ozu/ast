@@ -1,4 +1,4 @@
-error: `#[derive(Ast)]` works on a struct or an enum; a union has no walkable fields
+error: `#[derive(Visiting)]` works on a struct or an enum; a union has no walkable fields
  --> tests/ui/derive_ast_on_a_union.rs:7:11
   |
 7 | pub union U {

@@ -112,9 +112,9 @@ fn has_concrete_fill(targets: &[&DoneType], shared: &HashSet<String>) -> bool {
 }
 
 /// The per-module tag type threaded through [`crate::visit::Walk`] as its first parameter, so two
-/// `visitor!` modules over the same node type do not write conflicting impls.
+/// `define_visit!` modules over the same node type do not write conflicting impls.
 pub(crate) fn walk_tag() -> Ident {
-    Ident::new("__AstWalkTag", Span::call_site())
+    Ident::new("__VisitingWalkTag", Span::call_site())
 }
 
 /// The tag's generic params: the union's lifetimes and type params, but **not** its const params — a
@@ -153,7 +153,7 @@ pub(crate) fn walk_tag_phantom(g_params: &[GenericParam]) -> TokenStream {
     quote!( ::core::marker::PhantomData<( #(#parts,)* )> )
 }
 
-/// A drilled intermediate — reached through `#[subast]` but not listed in `visitor!(..)`, so it has
+/// A drilled intermediate — reached through `#[subast]` but not listed in `define_visit!(..)`, so it has
 /// no visit method — gets a `Walk` impl of its own instead of being destructured inline at every use
 /// site. Unconditional, like a node's, so a `#[subast]` cycle through one terminates.
 fn intermediate_impls(
@@ -191,11 +191,11 @@ fn intermediate_impls(
                 let body = lowers[side.index()].destructure(node, &quote!(self), 0, &mut stack);
                 let (tr, f, recv) = (side.walk_trait(), side.walk_fn(), side.recv());
                 quote! {
-                    impl< #(#params,)* __AstW: #{side.visit_trait()} #g_use + ?Sized >
-                        __ast_rt::walk::#tr< #tag #targs, __ast_rt::walk::Here, __AstW >
+                    impl< #(#params,)* __VisitingW: #{side.visit_trait()} #g_use + ?Sized >
+                        __visiting_rt::walk::#tr< #tag #targs, __visiting_rt::walk::Here, __VisitingW >
                         for #path #own_use #where_cl
                     {
-                        fn #f(#recv, this: &mut __AstW) {
+                        fn #f(#recv, this: &mut __VisitingW) {
                             let _ = &this;
                             #body
                         }
@@ -232,10 +232,10 @@ fn inherited_impls(
                 );
                 let m_name = side.method(id);
                 quote! {
-                    impl< #(#g_params,)* __AstW: #vt #g_use + ?Sized >
-                        __ast_rt::walk::#tr< #tag #targs, __ast_rt::walk::Here, __AstW > for #ty #uw
+                    impl< #(#g_params,)* __VisitingW: #vt #g_use + ?Sized >
+                        __visiting_rt::walk::#tr< #tag #targs, __visiting_rt::walk::Here, __VisitingW > for #ty #uw
                     {
-                        fn #f(#recv, v: &mut __AstW) {
+                        fn #f(#recv, v: &mut __VisitingW) {
                             // Plain method syntax: an inherited `visit_*` is reached through the
                             // supertrait, so it is not a member of this module's own trait.
                             v.#m_name(self)
@@ -397,10 +397,10 @@ fn generate_module(st: &BuildInput) -> TokenStream {
     let visited_macro = emit_visited_macro(st, &m.g_params, anc_export, &own);
     let impl_chain = emit_impl_chain(&st.nonce, &m.ancestors);
 
-    // The `__ast_base` relay: a module naming the direct base's traits, plus the base's own relay,
-    // so an extender reaches any ancestor as `<base>::__ast_base::..` (see `base_relay`).
+    // The `__visiting_base` relay: a module naming the direct base's traits, plus the base's own relay,
+    // so an extender reaches any ancestor as `<base>::__visiting_base::..` (see `base_relay`).
     //
-    // A module, not `pub use #b as __ast_base`: re-exporting a *module* that is private is E0365,
+    // A module, not `pub use #b as __visiting_base`: re-exporting a *module* that is private is E0365,
     // and a private base module is exactly the case this exists for. Re-exporting the public items
     // out of it is allowed, so the relay forwards those instead.
     //
@@ -411,9 +411,9 @@ fn generate_module(st: &BuildInput) -> TokenStream {
         let relay = Ident::new(BASE_RELAY, Span::call_site());
         let id = |s: &str| Ident::new(s, Span::call_site());
         let (v, vm, next) = (
-            id("__ast_relay_Visit"),
-            id("__ast_relay_VisitMut"),
-            id("__ast_relay_next"),
+            id("__visiting_relay_Visit"),
+            id("__visiting_relay_VisitMut"),
+            id("__visiting_relay_next"),
         );
         // The base has a relay of its own exactly when it has an ancestor to reach through it.
         let onward = (m.chain.len() > 1).then(|| {
@@ -435,9 +435,9 @@ fn generate_module(st: &BuildInput) -> TokenStream {
             .chain(
                 st.base_own
                     .iter()
-                    .map(|d| id(&format!("__ast_ty_{}", d.ident))),
+                    .map(|d| id(&format!("__visiting_ty_{}", d.ident))),
             )
-            .map(|f| (id(&format!("__ast_relay_fn_{f}")), f))
+            .map(|f| (id(&format!("__visiting_relay_fn_{f}")), f))
             .unzip();
         quote! {
             #[doc(hidden)]
@@ -459,14 +459,14 @@ fn generate_module(st: &BuildInput) -> TokenStream {
     });
 
     // One alias per target, taking exactly that type's own parameters. An extender spells an
-    // inherited type through the relay (`<module>::__ast_base::__ast_ty_Expr<S>`) rather than by
+    // inherited type through the relay (`<module>::__visiting_base::__visiting_ty_Expr<S>`) rather than by
     // its own path: the path is `crate::`-rooted by convention, and `crate` inside a `macro_rules`
     // body means the crate that *invokes* it.
     let ty_aliases: Vec<TokenStream> = vtypes
         .iter()
         .map(|t| {
             let (ident, path, own) = (&t.ident, &t.path, &t.own_use);
-            let alias = Ident::new(&format!("__ast_ty_{ident}"), Span::call_site());
+            let alias = Ident::new(&format!("__visiting_ty_{ident}"), Span::call_site());
             let bare: Vec<GenericParam> = t.own_params.iter().cloned().map(strip_bounds).collect();
             quote! {
                 #[doc(hidden)]
@@ -476,7 +476,7 @@ fn generate_module(st: &BuildInput) -> TokenStream {
         })
         .collect();
 
-    // Items are emitted directly into the enclosing module (where `visitor!(...)` was invoked).
+    // Items are emitted directly into the enclosing module (where `define_visit!(...)` was invoked).
     quote! {
         #visited_macro
         #base_relay_export

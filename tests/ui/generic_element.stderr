@@ -4,7 +4,7 @@ error: `Qubit<S>` is handed to `Brackets`'s type parameter `T`, which `Brackets`
 21 |     pub b: Brackets<Qubit<S>, S>,
    |            ^^^^^^^^^^^^^^^^^^^^^
 ...
-25 |     ast::visitor!(crate::Qubit, crate::Brackets, crate::Stmt);
-   |     --------------------------------------------------------- in this macro invocation
+25 |     visiting::define_visit!(crate::Qubit, crate::Brackets, crate::Stmt);
+   |     ------------------------------------------------------------------- in this macro invocation
    |
-   = note: this error originates in the macro `crate::Stmt` which comes from the expansion of the macro `ast::visitor` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `crate::Stmt` which comes from the expansion of the macro `visiting::define_visit` (in Nightly builds, run with -Z macro-backtrace for more info)

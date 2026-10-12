@@ -1,9 +1,9 @@
 //! A union has no walkable fields, and nothing downstream handles one — so the derive says so,
-//! rather than leaving `visitor!` to report "no AST definitions resolved".
+//! rather than leaving `define_visit!` to report "no AST definitions resolved".
 
-use ast::Ast;
+use visiting::Visiting;
 
-#[derive(Ast)]
+#[derive(Visiting)]
 pub union U {
     pub a: u32,
 }

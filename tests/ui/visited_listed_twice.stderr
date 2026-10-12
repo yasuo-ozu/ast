@@ -1,5 +1,5 @@
 error: `crate::Item` is listed twice in this visitor; each visited type is named once
-  --> tests/ui/visited_listed_twice.rs:12:32
+  --> tests/ui/visited_listed_twice.rs:12:42
    |
-12 |     ast::visitor!(crate::Item, crate::Item);
-   |                                ^^^^^^^^^^^
+12 |     visiting::define_visit!(crate::Item, crate::Item);
+   |                                          ^^^^^^^^^^^

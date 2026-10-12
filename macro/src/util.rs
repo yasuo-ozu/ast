@@ -199,10 +199,10 @@ impl Container {
     /// `set`/`take` live.
     pub(crate) fn view_trait(self, mutable: bool) -> TokenStream {
         match (self, mutable) {
-            (Container::Seq, false) => quote!(__ast_rt::SeqView),
-            (Container::Seq, true) => quote!(__ast_rt::SeqEdit),
-            (Container::Opt, false) => quote!(__ast_rt::OptView),
-            (Container::Opt, true) => quote!(__ast_rt::OptEdit),
+            (Container::Seq, false) => quote!(__visiting_rt::SeqView),
+            (Container::Seq, true) => quote!(__visiting_rt::SeqEdit),
+            (Container::Opt, false) => quote!(__visiting_rt::OptView),
+            (Container::Opt, true) => quote!(__visiting_rt::OptEdit),
         }
     }
 }
@@ -317,7 +317,7 @@ pub(crate) fn indicator(ty: &Type, user_types: &HashSet<String>) -> Option<Token
     // `&T` a `Thru` impl like any other wrapper — so account for it here.
     match ty {
         Type::Reference(r) => {
-            return indicator(&r.elem, user_types).map(|h| quote!(__ast_rt::walk::Thru<#h>))
+            return indicator(&r.elem, user_types).map(|h| quote!(__visiting_rt::walk::Thru<#h>))
         }
         Type::Paren(p) => return indicator(&p.elem, user_types),
         Type::Group(g) => return indicator(&g.elem, user_types),
@@ -325,11 +325,13 @@ pub(crate) fn indicator(ty: &Type, user_types: &HashSet<String>) -> Option<Token
     }
     let p = peel(ty, user_types)?;
     let inner = match &p.head {
-        Head::Path { .. } => quote!(__ast_rt::walk::Here),
+        Head::Path { .. } => quote!(__visiting_rt::walk::Here),
         Head::Tuple(elems) => {
             let parts: Vec<TokenStream> = elems
                 .iter()
-                .map(|e| indicator(e, user_types).unwrap_or_else(|| quote!(__ast_rt::walk::Skip)))
+                .map(|e| {
+                    indicator(e, user_types).unwrap_or_else(|| quote!(__visiting_rt::walk::Skip))
+                })
                 .collect();
             quote!( ( #(#parts,)* ) )
         }
@@ -338,7 +340,7 @@ pub(crate) fn indicator(ty: &Type, user_types: &HashSet<String>) -> Option<Token
         p.conts
             .iter()
             .rev()
-            .fold(inner, |acc, _| quote!(__ast_rt::walk::Thru<#acc>)),
+            .fold(inner, |acc, _| quote!(__visiting_rt::walk::Thru<#acc>)),
     )
 }
 
@@ -436,7 +438,7 @@ impl Side {
 /// its segments are a suffix of the visited path's.
 ///
 /// `peel` recognises a head by last segment alone, which is enough while `#[subast]` supplies the
-/// authoritative path. Resolving a head against the `visitor!(..)` set instead has no such anchor, so
+/// authoritative path. Resolving a head against the `define_visit!(..)` set instead has no such anchor, so
 /// `super::other::Stmt` would be walked as `crate::ast::Stmt` — a real bug this already has a
 /// regression test for. Declining here leaves such a field a leaf, which is what it was.
 ///

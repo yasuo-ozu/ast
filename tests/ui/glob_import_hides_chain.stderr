@@ -6,7 +6,7 @@ error: cannot find macro `impl_chain` in this scope
    |
 help: consider importing one of these macros
    |
- 5 + use crate::__ast_chain::impl_chain;
+ 5 + use crate::__visiting_chain::impl_chain;
    |
- 5 + use crate::base::__ast_chain::impl_chain;
+ 5 + use crate::base::__visiting_chain::impl_chain;
    |

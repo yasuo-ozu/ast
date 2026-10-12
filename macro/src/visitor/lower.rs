@@ -42,10 +42,10 @@ pub(crate) fn tuple_impls(
     union_where: &[WherePredicate],
 ) -> Vec<TokenStream> {
     let into_vis_tr = side.ty("IntoVisitor");
-    let into_hook_tr = side.ty("__AstIntoHook");
+    let into_hook_tr = side.ty("__VisitingIntoHook");
     let into_vis_fn = side.func("into_visitor");
     let into_hook_fn = side.func("into_hook");
-    let driver = side.ty("__AstDriver");
+    let driver = side.ty("__VisitingDriver");
     // Helper param prefixes that avoid the visited types' own generic param names (so a visited type
     // may declare a param literally named `__F0`/`__T0`/…).
     let reserved: HashSet<String> = g_params.iter().map(param_name).collect();
@@ -84,7 +84,7 @@ pub(crate) fn tuple_impls(
         .collect()
 }
 
-/// The `#[seq]`/`#[opt]` marker on a field (`None` if unmarked), preserved into the `#[derive(Ast)]`
+/// The `#[seq]`/`#[opt]` marker on a field (`None` if unmarked), preserved into the `#[derive(Visiting)]`
 /// metadata so the visitor can dispatch the field through its `SeqView`/`OptView` view.
 fn field_view(attrs: &[Attribute]) -> Option<Container> {
     let seq = attrs.iter().any(|a| a.path().is_ident("seq"));
@@ -110,7 +110,7 @@ fn field_skips(attrs: &[Attribute]) -> bool {
 /// Abort: a `#[seq]`/`#[opt]`-marked field's element isn't a visited type. `single` distinguishes
 /// the two call sites: `false` when `peel` found no followed head at all (a leaf field, e.g.
 /// `Vec<String>`); `true` when a head *was* found but it resolves to an unlisted intermediate or a
-/// tuple, not a `visitor!(..)`-listed type. Only the `false` (first) wording is UI-pinned
+/// tuple, not a `define_visit!(..)`-listed type. Only the `false` (first) wording is UI-pinned
 /// (`core/tests/ui/visitor_edit_marker_unvisited.stderr`) — the `true` wording is unpinned
 /// anywhere in the trybuild suite, so this merge is free to standardize on the pinned text plus one
 /// inserted word.
@@ -120,7 +120,7 @@ fn abort_marker_not_visited(ty: &Type, kind: &Container, single: bool) -> ! {
     abort!(
         ty,
         "a `#[{}]` field's element type is not a visited type — mark only a field whose element is \
-         a {}container of a type listed in `visitor!(..)`",
+         a {}container of a type listed in `define_visit!(..)`",
         marker,
         extra
     );
@@ -159,7 +159,7 @@ struct FieldIn<'a> {
 /// through inline (its def destructured, recursing into its `#[subast]` fields); any other field is
 /// a leaf.
 pub(crate) struct Lower<'a> {
-    /// Heads that get a method call (the `visitor!(..)` set ∪ inherited).
+    /// Heads that get a method call (the `define_visit!(..)` set ∪ inherited).
     pub(crate) method_set: &'a HashSet<String>,
     /// Fetched types keyed by `norm_path`, for resolving an intermediate's def when drilling.
     pub(crate) done_by_path: &'a HashMap<String, &'a DoneType>,
@@ -169,12 +169,12 @@ pub(crate) struct Lower<'a> {
     /// methods `gen_side` emits.
     pub(crate) seq_used: &'a RefCell<HashSet<String>>,
     pub(crate) opt_used: &'a RefCell<HashSet<String>>,
-    /// This module's `Walk` tag with its args (`__AstWalkTag<S>`), for spelling the bound at a call
+    /// This module's `Walk` tag with its args (`__VisitingWalkTag<S>`), for spelling the bound at a call
     /// site — the tag carries the union params so a node's impl can name params its own type omits.
     pub(crate) walk_tag_args: &'a TokenStream,
-    /// Heads this module generates `Walk` impls for directly (its `visitor!(..)` targets). An
+    /// Heads this module generates `Walk` impls for directly (its `define_visit!(..)` targets). An
     /// *inherited* head is in `method_set` but not here — its impl is emitted separately, against the
-    /// path the base sent through `__ast_visited` (see `inherited_heads`).
+    /// path the base sent through `__visiting_visited` (see `inherited_heads`).
     pub(crate) target_set: &'a HashSet<String>,
     /// Head types reached that are *inherited* — visited by a base module, so this module has no
     /// `Walk` impl for them. Recorded as `(dedup key, type tokens)` and emitted alongside the node
@@ -233,7 +233,7 @@ impl<'a> Lower<'a> {
             abort!(
                 head,
                 "`#[subast]` cycle through unlisted intermediate `{}`: it cannot be drilled inline. \
-                 List one of the cycle's types in `visitor!(..)` so a method call breaks the recursion",
+                 List one of the cycle's types in `define_visit!(..)` so a method call breaks the recursion",
                 head
             );
         }
@@ -379,7 +379,7 @@ impl<'a> Lower<'a> {
             PathArguments::AngleBracketed(ab) => ab,
             _ => return,
         };
-        // `done_by_path` is keyed by the `visitor!(..)` paths (`crate::…`), but `head_path` came from
+        // `done_by_path` is keyed by the `define_visit!(..)` paths (`crate::…`), but `head_path` came from
         // a `#[subast]` entry, which the metadata macro re-roots to `$crate::…`. Fold the root so the
         // two meet; a miss here only costs the diagnostic, never correctness.
         let key = norm_path(head_path).replace("$crate", "crate");
@@ -511,14 +511,14 @@ impl<'a> Lower<'a> {
                     // Prefer the path this visitor knows the type by. A `#[subast]` path may be
                     // written however the declaring module liked — only its last segment is compared
                     // — so it is not necessarily nameable *here*. `reachable` holds the spelling
-                    // `visitor!(..)` used, which is.
+                    // `define_visit!(..)` used, which is.
                     match self.reachable.get(&real.to_string()) {
                         Some(p) => (real, p.clone()),
                         None => (real, e.path.clone()),
                     }
                 })
                 // No `#[subast]` entry, so the head is one this visitor already names: a type it
-                // lists, or one it inherits (whose path arrived through the base's `__ast_visited`).
+                // lists, or one it inherits (whose path arrived through the base's `__visiting_visited`).
                 // An entry would only have repeated what the visitor already said.
                 .or_else(|| {
                     self.reachable.get(&phead.to_string()).and_then(|p| {
@@ -616,8 +616,8 @@ impl<'a> Lower<'a> {
             let (tr, f) = (self.side.walk_trait(), self.side.walk_fn());
             let tag = walk_tag();
             let targs = self.walk_tag_args;
-            let h = indicator(ty, &user_types).unwrap_or_else(|| quote!(__ast_rt::walk::Skip));
-            quote!( __ast_rt::walk::#tr::<#tag #targs, #h, _>::#f(#binding, this); )
+            let h = indicator(ty, &user_types).unwrap_or_else(|| quote!(__visiting_rt::walk::Skip));
+            quote!( __visiting_rt::walk::#tr::<#tag #targs, #h, _>::#f(#binding, this); )
         })
     }
 

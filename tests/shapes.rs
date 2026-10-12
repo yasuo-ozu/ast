@@ -5,37 +5,37 @@
 //! levels up, and from an entry point partway down the chain.
 #![allow(dead_code)]
 
-use ast::Ast;
 use core::marker::PhantomData;
+use visiting::Visiting;
 
-#[derive(Ast)]
+#[derive(Visiting)]
 pub enum Type<S> {
     U(PhantomData<S>),
 }
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Type)]
 pub struct Expr<S> {
     pub t: Type<S>,
 }
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Expr)]
 pub struct Stmt<S> {
     pub e: Expr<S>,
 }
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Stmt)]
 pub struct Item<S> {
     pub s: Stmt<S>,
 }
 
 pub mod base {
-    ast::visitor!(crate::Type, crate::Expr);
+    visiting::define_visit!(crate::Type, crate::Expr);
 }
 pub mod mid {
-    ast::visitor!(crate::base => crate::Stmt);
+    visiting::define_visit!(crate::base => crate::Stmt);
 }
 pub mod top {
-    ast::visitor!(crate::mid => crate::Item);
+    visiting::define_visit!(crate::mid => crate::Item);
 }
 
 fn sample() -> Item<()> {
@@ -139,7 +139,7 @@ struct Counts {
     items: u32,
     types: u32,
 }
-top::__ast_chain::impl_chain! { top; Counts;
+top::__visiting_chain::impl_chain! { top; Counts;
     fn visit_type(&mut self, i) { self.types += 1; base::visit_type(self, i); }
 }
 impl<S> top::Visit<S> for Counts {
@@ -175,7 +175,7 @@ impl<S> base::Visit<S> for BaseOnly {
     }
 }
 impl<S> base::VisitMut<S> for BaseOnly {}
-top::__ast_chain::impl_chain! { top; BaseOnly; fn visit_type; }
+top::__visiting_chain::impl_chain! { top; BaseOnly; fn visit_type; }
 impl<S> top::Visit<S> for BaseOnly {}
 
 #[test]

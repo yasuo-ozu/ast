@@ -5,7 +5,7 @@ use super::*;
 ///
 /// A visitor names a type by the last segment of its path, so `a::Foo` and `b::Foo` are one name:
 /// one `visit_foo`, one hook, one entry here. [`check_last_segment_collisions`] catches a pair
-/// inside a single `visitor!(..)` list, and the `#[subast]` checks catch a pair meeting in one
+/// inside a single `define_visit!(..)` list, and the `#[subast]` checks catch a pair meeting in one
 /// node, but neither looks along the *chain* — where one ancestor contributes each. Left alone the
 /// map silently keeps one of them, and the mismatch surfaces later as `multiple applicable items in
 /// scope` naming a method the user never wrote.
@@ -20,7 +20,7 @@ fn merge_reachable(
     for (key, path) in inherited {
         if let Some(prev) = out.get(&key) {
             if norm_path(prev) != norm_path(&path) {
-                // Reported at the entry in *this* `visitor!(..)`: the inherited one's span points
+                // Reported at the entry in *this* `define_visit!(..)`: the inherited one's span points
                 // into the ancestor that declared it, which is not where the fix goes.
                 abort!(
                     prev,
@@ -52,7 +52,7 @@ pub(crate) fn check_last_segment_collisions(visited: &[Path]) {
         if let Some(prev) = seen.insert(seg.clone(), np.clone()) {
             if prev == np {
                 // The same type twice. Every item it names would be emitted twice, so without this
-                // the user reads `E0428` about `__ast_ty_*`/`visit_*` — names they never wrote.
+                // the user reads `E0428` about `__visiting_ty_*`/`visit_*` — names they never wrote.
                 abort!(
                     p,
                     "`{}` is listed twice in this visitor; each visited type is named once",
@@ -86,10 +86,10 @@ fn pick<T: Clone>(names: &[Ident], m: &HashMap<String, T>) -> Vec<T> {
 /// Everything here is a question about the visited set as a whole, answered before any code is
 /// emitted; the emitters below read it and never recompute it.
 pub(crate) struct Model<'a> {
-    /// Each visited type's last segment → the path `visitor!(..)` named it by. The generated module
+    /// Each visited type's last segment → the path `define_visit!(..)` named it by. The generated module
     /// names the visited types by that path, so no import is needed for absolute ones.
     pub(crate) path_of: HashMap<String, &'a Path>,
-    /// Last segments of the `visitor!(..)`-listed types.
+    /// Last segments of the `define_visit!(..)`-listed types.
     pub(crate) visited: HashSet<String>,
     /// Every head this visitor can name — its own targets plus what it inherits — with the path to
     /// name it by. This is what makes a field followed because its type is *visited*, rather than
@@ -258,7 +258,7 @@ impl<'a> Model<'a> {
                     .map(|p| Ident::new(&param_name(p), Span::call_site()))
                     .collect(),
             });
-            // Name each transitive ancestor through the base's `__ast_base` re-export chain rather
+            // Name each transitive ancestor through the base's `__visiting_base` re-export chain rather
             // than by the path the upstream intermediate recorded. The recorded path has to be
             // nameable from here, which a private or un-re-exported upstream module is not; a relay
             // path only ever names the link below it, so the chain crosses a crate boundary (and a

@@ -3,14 +3,14 @@
 //! type (`Item`, owned by `base`) is a clean error, not a cryptic "no method `visit_item_seq`" downstream.
 
 use core::marker::PhantomData;
-use ast::Ast;
+use visiting::Visiting;
 
-#[derive(Ast)]
+#[derive(Visiting)]
 pub enum Item<S> {
     Leaf(PhantomData<S>),
 }
 
-#[derive(Ast)]
+#[derive(Visiting)]
 #[subast(crate::Item)]
 pub struct List<S> {
     #[seq]
@@ -18,11 +18,11 @@ pub struct List<S> {
 }
 
 pub mod base {
-    ast::visitor!(crate::Item);
+    visiting::define_visit!(crate::Item);
 }
 
 pub mod ext {
-    ast::visitor!(crate::base => crate::List);
+    visiting::define_visit!(crate::base => crate::List);
 }
 
 fn main() {

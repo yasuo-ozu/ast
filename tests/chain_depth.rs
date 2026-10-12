@@ -4,51 +4,51 @@
 //! working at depth, and when the extender carries parameters its ancestors never had.
 #![allow(dead_code)]
 
-use ast::Ast;
 use core::marker::PhantomData;
+use visiting::Visiting;
 
 mod deep {
     use super::*;
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     pub enum A<S> {
         X(PhantomData<S>),
     }
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::deep::A)]
     pub struct B<S> {
         pub a: A<S>,
     }
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::deep::B)]
     pub struct C<S> {
         pub b: B<S>,
     }
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::deep::C)]
     pub struct D<S> {
         pub c: C<S>,
     }
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::deep::D)]
     pub struct E<S> {
         pub d: D<S>,
     }
 
     pub mod v1 {
-        ast::visitor!(crate::deep::A);
+        visiting::define_visit!(crate::deep::A);
     }
     pub mod v2 {
-        ast::visitor!(crate::deep::v1 => crate::deep::B);
+        visiting::define_visit!(crate::deep::v1 => crate::deep::B);
     }
     pub mod v3 {
-        ast::visitor!(crate::deep::v2 => crate::deep::C);
+        visiting::define_visit!(crate::deep::v2 => crate::deep::C);
     }
     pub mod v4 {
-        ast::visitor!(crate::deep::v3 => crate::deep::D);
+        visiting::define_visit!(crate::deep::v3 => crate::deep::D);
     }
     pub mod v5 {
-        ast::visitor!(crate::deep::v4 => crate::deep::E);
+        visiting::define_visit!(crate::deep::v4 => crate::deep::E);
     }
 
     fn sample() -> E<()> {
@@ -88,7 +88,7 @@ mod deep {
         a: u32,
         e: u32,
     }
-    v5::__ast_chain::impl_chain! { v5; P;
+    v5::__visiting_chain::impl_chain! { v5; P;
         fn visit_a(&mut self, i) { self.a += 1; v1::visit_a(self, i); }
     }
     impl<S> v5::Visit<S> for P {
@@ -109,17 +109,17 @@ mod deep {
 mod widened {
     use super::*;
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     pub enum Type<S> {
         U(PhantomData<S>),
     }
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::widened::Type)]
     pub struct Expr<S> {
         pub t: Type<S>,
     }
     // The extender carries a parameter its ancestors never had.
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::widened::Expr)]
     pub struct Item<S, T> {
         pub e: Expr<S>,
@@ -127,10 +127,10 @@ mod widened {
     }
 
     pub mod base {
-        ast::visitor!(crate::widened::Type, crate::widened::Expr);
+        visiting::define_visit!(crate::widened::Type, crate::widened::Expr);
     }
     pub mod top {
-        ast::visitor!(crate::widened::base => crate::widened::Item);
+        visiting::define_visit!(crate::widened::base => crate::widened::Item);
     }
 
     fn sample() -> Item<(), u8> {
@@ -161,7 +161,7 @@ mod widened {
         types: u32,
         items: u32,
     }
-    top::__ast_chain::impl_chain! { top; P;
+    top::__visiting_chain::impl_chain! { top; P;
         fn visit_type(&mut self, i) { self.types += 1; base::visit_type(self, i); }
     }
     impl<S, T> top::Visit<S, T> for P {

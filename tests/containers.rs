@@ -4,17 +4,17 @@
 
 // Nested containers (`Vec<Option<T>>`, `Option<Vec<T>>`, `Vec<Vec<T>>`) are traversed.
 mod nested {
-    use ast::Ast;
     use core::marker::PhantomData;
+    use visiting::Visiting;
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast()]
     pub struct Leaf<S> {
         pub _p: PhantomData<S>,
         pub value: i64,
     }
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::nested::Leaf)]
     pub struct Holder<S> {
         pub vo: Vec<Option<Leaf<S>>>,
@@ -23,7 +23,7 @@ mod nested {
     }
 
     mod v {
-        ast::visitor!(crate::nested::Leaf, crate::nested::Holder);
+        visiting::define_visit!(crate::nested::Leaf, crate::nested::Holder);
     }
 
     fn leaf<S>(value: i64) -> Leaf<S> {
@@ -74,16 +74,16 @@ mod nested {
 
 // A tuple nested inside a container (`Vec<(A,B)>`, `Option<(A,B)>`, `Box<(A,B)>`) has its elements visited.
 mod container_of_tuple {
-    use ast::Ast;
     use core::marker::PhantomData;
+    use visiting::Visiting;
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast()]
     pub struct Leaf<S> {
         pub _p: PhantomData<S>,
     }
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::container_of_tuple::Leaf)]
     pub struct Holder<S> {
         pub top: (Leaf<S>, Leaf<S>),
@@ -93,7 +93,7 @@ mod container_of_tuple {
     }
 
     mod v {
-        ast::visitor!(
+        visiting::define_visit!(
             crate::container_of_tuple::Leaf,
             crate::container_of_tuple::Holder
         );
@@ -135,15 +135,15 @@ mod container_of_tuple {
 
 // A tuple-typed field is destructured and each element lowered (top-level + nested tuples).
 mod tuple_field {
-    use ast::Ast;
     use core::marker::PhantomData;
+    use visiting::Visiting;
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     pub enum Ty<S> {
         Unit(PhantomData<S>),
     }
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::tuple_field::Ty)]
     pub enum Expr<S> {
         Pair((Ty<S>, Ty<S>)),
@@ -153,7 +153,7 @@ mod tuple_field {
     }
 
     pub mod v {
-        ast::visitor!(crate::tuple_field::Expr, crate::tuple_field::Ty);
+        visiting::define_visit!(crate::tuple_field::Expr, crate::tuple_field::Ty);
     }
 
     #[test]
@@ -177,12 +177,12 @@ mod tuple_field {
 }
 
 // `View` is the hand-written-traversal half for a map field: the node sits in the VALUE slot, so
-// there is no positional edit and nothing `visitor!` generates calls it. Its two iterators are the
+// there is no positional edit and nothing `define_visit!` generates calls it. Its two iterators are the
 // map's own `Values`/`ValuesMut` — named as associated types, with the borrow a parameter of the
 // trait, so neither is boxed.
 mod map_view {
-    use ast::Elements;
     use std::collections::{BTreeMap, HashMap};
+    use visiting::Elements;
 
     #[derive(Debug, PartialEq)]
     struct Node(i64);
@@ -239,8 +239,8 @@ mod map_view {
 // any field that peels to exactly one layer — so a consumer plugs its own in with three impls:
 // `SeqView`/`OptView` for the edit view, and `Walk`/`WalkMut` at `Thru<H>` for the descent.
 mod own_container {
-    use ast::walk::{Thru, Walk, WalkMut};
-    use ast::{Ast, Elements, OptEdit, OptView, SeqEdit, SeqView};
+    use visiting::walk::{Thru, Walk, WalkMut};
+    use visiting::{Elements, OptEdit, OptView, SeqEdit, SeqView, Visiting};
 
     pub struct Punctuated<T, P>(Vec<T>, core::marker::PhantomData<P>);
 
@@ -368,10 +368,10 @@ mod own_container {
         }
     }
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     pub struct Item(pub u32);
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::own_container::Item)]
     pub struct Doc {
         #[seq]
@@ -381,7 +381,7 @@ mod own_container {
     }
 
     pub mod v {
-        ast::visitor!(super::Item, super::Doc);
+        visiting::define_visit!(super::Item, super::Doc);
     }
 
     #[test]
@@ -460,12 +460,12 @@ mod own_container {
 }
 
 // A map the crate has never heard of. `View` is descent-only — the node sits in the VALUE slot, so
-// there is no `#[seq]`/`#[opt]` marker and nothing `visitor!` generates calls the trait. A consumer
+// there is no `#[seq]`/`#[opt]` marker and nothing `define_visit!` generates calls the trait. A consumer
 // still gets both halves: `Walk`/`WalkMut` at `Thru<H>` for the generated descent, and `MapView` for
 // a traversal it writes itself.
 mod own_map {
-    use ast::walk::{Thru, Walk, WalkMut};
-    use ast::{Ast, Elements};
+    use visiting::walk::{Thru, Walk, WalkMut};
+    use visiting::{Elements, Visiting};
 
     /// An association list, which is a map whose values are *projected* out of its entries rather
     /// than stored apart. So its iterators are `Map<slice::Iter<..>, fn(..) -> ..>` — nameable
@@ -515,10 +515,10 @@ mod own_map {
         }
     }
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     pub struct Item(pub u32);
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::own_map::Item)]
     pub struct Doc {
         // No marker: a keyed slot has no positional edit, so the field is walked and nothing else.
@@ -526,7 +526,7 @@ mod own_map {
     }
 
     pub mod v {
-        ast::visitor!(super::Item, super::Doc);
+        visiting::define_visit!(super::Item, super::Doc);
     }
 
     fn doc() -> Doc {
@@ -579,13 +579,13 @@ mod own_map {
 // `Vec` is the container every other test reaches for. These are the walk targets that nothing
 // else exercises: a `VecDeque`, a fixed-size array and a slice behind a reference.
 mod other_shapes {
-    use ast::Ast;
     use std::collections::VecDeque;
+    use visiting::Visiting;
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     pub struct Leaf(pub u32);
 
-    #[derive(Ast)]
+    #[derive(Visiting)]
     #[subast(crate::other_shapes::Leaf)]
     pub struct Holder {
         pub deque: VecDeque<Leaf>,
@@ -593,7 +593,7 @@ mod other_shapes {
     }
 
     pub mod v {
-        ast::visitor!(super::Leaf, super::Holder);
+        visiting::define_visit!(super::Leaf, super::Holder);
     }
 
     fn sample() -> Holder {

@@ -6,14 +6,14 @@
 //! on the `&mut` side to change the collection.
 #![allow(dead_code)]
 
-use ast::{Ast, OptEdit, OptView, SeqEdit, SeqView};
+use visiting::{OptEdit, OptView, SeqEdit, SeqView, Visiting};
 
-#[derive(Ast, Debug, PartialEq)]
+#[derive(Visiting, Debug, PartialEq)]
 pub enum Leaf {
     N(u32),
 }
 
-#[derive(Ast, Debug)]
+#[derive(Visiting, Debug)]
 pub struct Holder {
     #[seq]
     pub items: Vec<Leaf>,
@@ -22,7 +22,7 @@ pub struct Holder {
 }
 
 pub mod visit {
-    ast::visitor!(crate::Leaf, crate::Holder);
+    visiting::define_visit!(crate::Leaf, crate::Holder);
 }
 
 fn holder() -> Holder {
@@ -136,10 +136,10 @@ fn a_marked_field_is_still_walked_element_by_element() {
 mod borrowed_elements {
     use super::*;
 
-    #[derive(Ast, Debug, PartialEq)]
+    #[derive(Visiting, Debug, PartialEq)]
     pub struct Borrowed<'s>(pub &'s str);
 
-    #[derive(Ast, Debug)]
+    #[derive(Visiting, Debug)]
     #[subast(crate::borrowed_elements::Borrowed)]
     pub struct Doc<'s> {
         #[seq]
@@ -147,7 +147,7 @@ mod borrowed_elements {
     }
 
     pub mod v {
-        ast::visitor!(
+        visiting::define_visit!(
             crate::borrowed_elements::Borrowed,
             crate::borrowed_elements::Doc
         );

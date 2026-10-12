@@ -34,10 +34,10 @@ fn crate_path(attrs: &[Attribute]) -> Path {
 /// See `visiting::Visiting` for the attributes (`#[visiting]`, `#[seq]`, `#[opt]`, `#[skip]`).
 #[proc_macro_error]
 #[proc_macro_derive(Visiting, attributes(visiting, seq, opt, skip))]
-pub fn visiting_derive(input: TokenStream1) -> TokenStream1 {
+pub fn derive_visiting(input: TokenStream1) -> TokenStream1 {
     let input: DeriveInput = parse_macro_input!(input);
     let path = crate_path(&input.attrs);
-    visiting::derive_visiting(&input, random(), &path).into()
+    crate::visiting::derive_visiting(&input, random(), &path).into()
 }
 
 #[proc_macro_error]

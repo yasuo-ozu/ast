@@ -19,16 +19,6 @@ fn random() -> u64 {
         .finish()
 }
 
-/// The crate path the generated code names, from `#[visiting(crate = <path>)]` on the type, or
-/// `::visiting`.
-///
-/// A facade that re-exports this crate can be named instead — `#[visiting(crate = ::my_crate)]`
-/// makes the impls read `::my_crate::visit::..`, which is what a grammar depending only on that
-/// facade needs. Everything else in `#[visiting(..)]` is a type to follow; see `parse_subast`.
-fn crate_path(attrs: &[Attribute]) -> Path {
-    visiting::parse_crate_path(attrs).unwrap_or_else(|| parse_quote!(::visiting))
-}
-
 /// Derive `Visiting` — mark a type as a node, and record the metadata a visitor walks it by.
 ///
 /// See `visiting::Visiting` for the attributes (`#[visiting]`, `#[seq]`, `#[opt]`, `#[skip]`).
@@ -36,7 +26,10 @@ fn crate_path(attrs: &[Attribute]) -> Path {
 #[proc_macro_derive(Visiting, attributes(visiting, seq, opt, skip))]
 pub fn derive_visiting(input: TokenStream1) -> TokenStream1 {
     let input: DeriveInput = parse_macro_input!(input);
-    let path = crate_path(&input.attrs);
+    // Which crate the generated code names. `#[visiting(crate = ::my_crate)]` points it at a facade
+    // that re-exports this crate, which is what a grammar depending only on that facade needs;
+    // otherwise the impls read `::visiting::..`.
+    let path = visiting::parse_crate_path(&input.attrs).unwrap_or_else(|| parse_quote!(::visiting));
     crate::visiting::derive_visiting(&input, random(), &path).into()
 }
 

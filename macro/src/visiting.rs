@@ -145,7 +145,7 @@ pub(crate) fn parse_subast(attrs: &[Attribute]) -> Vec<SubastEntry> {
                 continue;
             }
         };
-        // `crate = <path>` names the facade crate and is read by `crate_path`; everything else is a
+        // `crate = <path>` names the facade crate and is read by `parse_crate_path`; everything else is a
         // type to follow. Dropping the `crate` item here keeps one attribute doing both jobs.
         let items = match Punctuated::<VisitingItem, Token![,]>::parse_terminated.parse2(list) {
             Ok(parsed) => parsed,

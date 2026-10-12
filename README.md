@@ -1,13 +1,13 @@
-# ast crate [![Latest Version]][crates.io] [![Documentation]][docs.rs] [![CI]][ci-workflow] [![MSRV]][msrv-workflow]
+# visiting crate [![Latest Version]][crates.io] [![Documentation]][docs.rs] [![CI]][ci-workflow] [![MSRV]][msrv-workflow]
 
-[Latest Version]: https://img.shields.io/crates/v/ast.svg
-[crates.io]: https://crates.io/crates/ast
-[Documentation]: https://img.shields.io/docsrs/ast
-[docs.rs]: https://docs.rs/ast/latest/ast/
-[CI]: https://github.com/yasuo-ozu/ast/actions/workflows/ci.yml/badge.svg
-[ci-workflow]: https://github.com/yasuo-ozu/ast/actions/workflows/ci.yml
-[MSRV]: https://img.shields.io/crates/msrv/ast.svg
-[msrv-workflow]: https://github.com/yasuo-ozu/ast/actions/workflows/msrv.yml
+[Latest Version]: https://img.shields.io/crates/v/visiting.svg
+[crates.io]: https://crates.io/crates/visiting
+[Documentation]: https://img.shields.io/docsrs/visiting
+[docs.rs]: https://docs.rs/visiting/latest/visiting/
+[CI]: https://github.com/yasuo-ozu/visiting/actions/workflows/ci.yml/badge.svg
+[ci-workflow]: https://github.com/yasuo-ozu/visiting/actions/workflows/ci.yml
+[MSRV]: https://img.shields.io/crates/msrv/visiting.svg
+[msrv-workflow]: https://github.com/yasuo-ozu/visiting/actions/workflows/msrv.yml
 
 Walk a syntax tree you derived.
 

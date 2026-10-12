@@ -6,7 +6,7 @@ rust-version = "1.61"
 description = "Walk a derived syntax tree: the Visiting derive and the define_visit! generator"
 license = "MIT"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
-repository = "https://github.com/yasuo-ozu/ast"
+repository = "https://github.com/yasuo-ozu/visiting"
 keywords = ["ast", "visitor", "syntax-tree", "derive", "proc-macro"]
 categories = ["development-tools::procedural-macro-helpers", "parsing"]
 

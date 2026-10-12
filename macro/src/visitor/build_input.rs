@@ -798,7 +798,19 @@ pub fn build(input: TokenStream) -> TokenStream {
             &done_ts,
             rest,
         );
-        return quote! { #next ! { @ast #build { #state } } };
+        // announce's calling convention; see `__visiting_from_announce`. `build` is
+        // `<root>::_imp::visiting_macro::__visitor_build`, so dropping its last three segments
+        // recovers the root the consumer reaches this crate by — which may be a facade.
+        let adapter = {
+            let mut p = (*build).clone();
+            for _ in 0..3 {
+                p.segments.pop();
+            }
+            let segs = p.segments.iter().map(|s| &s.ident);
+            let lead = p.leading_colon;
+            quote!( #lead #(#segs ::)* visit::__visiting_from_announce )
+        };
+        return quote! { #next ! { [ #next !, #adapter ! ] @ast #build { #state } } };
     }
 
     generate_module(&st)

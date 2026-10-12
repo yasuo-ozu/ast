@@ -117,8 +117,11 @@ pub fn entry(input: TokenStream, nonce: u64) -> TokenStream {
         None => {
             let first = &args.types[0];
             let state = make_state(quote!(#first), &args.types[1..]);
+            // announce's calling convention, which this crate's own trampoline also answers, so one
+            // shape fetches either kind of definition. See `__visiting_from_announce`.
+            let adapter = quote!( #root::visit::__visiting_from_announce );
             quote! {
-                #first ! { @ast #build { #state } }
+                #first ! { [ #first !, #adapter ! ] @ast #build { #state } }
             }
         }
     }

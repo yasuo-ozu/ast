@@ -466,6 +466,22 @@ pub fn derive_visiting(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStr
                     @subast { #(#subast_entry_tokens),* }
                 }
             };
+            // The same definition, offered through `announce`'s calling convention, so a fetch can
+            // use one shape for a type carrying this derive and for one carrying `#[announce]`.
+            // The follow-list rides in announce's `META` slot, where a plain `#[announce]` type
+            // leaves nothing — which is correct, since it declares no follow-list.
+            // The list is `[Self!, adapter!]` at every fetch site this crate emits, so it is
+            // matched opaquely and the adapter named outright. A faithful announce trampoline would
+            // pop itself and forward to whatever comes next; that is the part to generalise if this
+            // ever has to sit in a longer chain.
+            ([$($_list:tt)*] $($rest:tt)*) => {
+                #root::visit::__visiting_from_announce ! {
+                    [ #root::visit::__visiting_from_announce ! ]
+                    #ident ! => [ subast { #(#subast_entry_tokens),* } ]
+                    { #cleaned }
+                    $($rest)*
+                }
+            };
         }
 
         #[doc(hidden)]

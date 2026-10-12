@@ -27,3 +27,6 @@ visiting-macro = { path = "macro", version = "0.1.0" }
 
 [dev-dependencies]
 trybuild = "1.0"
+# Prototype only: proves a type carrying `#[announce]` and no derive of ours can be walked.
+# A dev-dependency, so it is outside the MSRV gate (announce needs 1.71, this crate declares 1.61).
+announce = { path = "../ozu/announce" }

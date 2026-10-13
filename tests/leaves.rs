@@ -56,11 +56,11 @@ mod facade {
     use my_crate::Visiting;
 
     #[derive(Visiting)]
-    #[visiting(crate::facade::my_crate)]
+    #[visiting(crate = crate::facade::my_crate)]
     pub struct Leaf(pub u32);
 
     #[derive(Visiting)]
-    #[visiting(crate::facade::my_crate)]
+    #[visiting(crate = crate::facade::my_crate)]
     #[visiting(crate::facade::Leaf)]
     pub struct Node {
         pub leaves: Vec<Leaf>,

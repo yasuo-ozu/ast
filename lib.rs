@@ -117,9 +117,15 @@ pub use visiting_macro::Visiting;
 /// announced type had to be marked by hand, and a type from a crate that merely announces could not
 /// be marked at all.
 ///
-/// Pass this macro to `#[announce]` as a check:
+/// Pass this macro to `#[announce]` as a check. Nothing below derives anything of ours; the nodes,
+/// the follow-list and the field markers are all declared through `#[announce]`:
 ///
-/// ```ignore
+/// ```
+/// #[announce::announce(visiting::visiting)]
+/// pub struct Leaf {
+///     pub n: u32,
+/// }
+///
 /// #[announce::announce(visiting::visiting)]
 /// #[visiting(crate::Leaf)]
 /// pub struct Doc {
@@ -128,10 +134,26 @@ pub use visiting_macro::Visiting;
 ///     #[skip]
 ///     pub note: crate::Leaf,
 /// }
+///
+/// mod visit {
+///     visiting::define_visit!(crate::Doc, crate::Leaf);
+/// }
+///
+/// fn main() {
+///     let doc = Doc {
+///         leaves: vec![Leaf { n: 1 }, Leaf { n: 2 }],
+///         note: Leaf { n: 99 },
+///     };
+///     let mut seen = Vec::new();
+///     doc.visit(|l: &Leaf| seen.push(l.n));
+///     assert_eq!(seen, vec![1, 2], "`note` is behind `#[skip]`");
+/// }
 /// ```
 ///
 /// announce invokes the check beside the definition — where the marker impl is legal — and
-/// `define_visit!(crate::Doc, crate::Leaf)` builds a visitor over types that derive nothing of ours.
+/// `define_visit!` builds the visitor from the definitions its trampolines carry. Field types are
+/// written `crate::Leaf` rather than `Leaf` because announce re-uses the payload in another crate:
+/// that is its own rule, and it applies to any announced item.
 ///
 /// # The attributes are the same ones
 ///

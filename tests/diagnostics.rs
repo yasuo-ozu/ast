@@ -53,4 +53,7 @@ fn diagnostics() {
     // Handing a visited type to a generic parameter the node holds but never follows (`Brackets<T, S>`
     // with `items: Vec<T>`) puts those nodes out of reach — previously a silent empty walk.
     t.compile_fail("tests/ui/generic_element.rs");
+    // A follow-list entry matching no field is inert, so it is reported as a warning; the fixture
+    // denies it to pin the text.
+    t.compile_fail("tests/ui/visiting_unmatched_entry.rs");
 }

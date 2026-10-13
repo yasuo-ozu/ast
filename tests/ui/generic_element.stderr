@@ -8,3 +8,11 @@ error: `Qubit<S>` is handed to `Brackets`'s type parameter `T`, which `Brackets`
    |     ------------------------------------------------------------------- in this macro invocation
    |
    = note: this error originates in the macro `crate::Stmt` which comes from the expansion of the macro `visiting::define_visit` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: use of deprecated struct `_::unmatched_visiting_entry_Qubit`: `visiting(..)` entry `Qubit` matches no field of `Brackets`, so nothing is ever walked through it. Remove the entry, or correct its path to the type a field actually names (a field's head is matched by last path segment, so an alias or a type parameter does not match).
+  --> tests/ui/generic_element.rs:12:19
+   |
+12 | #[visiting(crate::Qubit)]
+   |                   ^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default

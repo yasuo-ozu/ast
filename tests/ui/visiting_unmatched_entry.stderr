@@ -1,0 +1,11 @@
+error: use of deprecated struct `_::unmatched_visiting_entry_Twig`: `visiting(..)` entry `Twig` matches no field of `Node`, so nothing is ever walked through it. Remove the entry, or correct its path to the type a field actually names (a field's head is matched by last path segment, so an alias or a type parameter does not match).
+  --> tests/ui/visiting_unmatched_entry.rs:18:32
+   |
+18 | #[visiting(crate::Leaf, crate::Twig)]
+   |                                ^^^^
+   |
+note: the lint level is defined here
+  --> tests/ui/visiting_unmatched_entry.rs:9:9
+   |
+ 9 | #![deny(deprecated)]
+   |         ^^^^^^^^^^

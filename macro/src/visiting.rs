@@ -1,6 +1,6 @@
 use crate::util::{angle, data_field_iter, for_each_type_path, gargs, gparams, to_snake};
 use proc_macro2::{Literal, Span, TokenStream};
-use proc_macro_error3::{abort, emit_error, emit_warning};
+use proc_macro_error3::{abort, emit_error};
 use std::collections::{HashMap, HashSet};
 use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
@@ -226,15 +226,33 @@ fn validate_follow(entries: &[SubastEntry]) {
             );
         }
     }
-    let mut seen: HashMap<String, ()> = HashMap::new();
+    // Two entries with the same matchkey cannot be told apart, but the fix depends on why they
+    // collide: the same type named twice is a redundant entry to delete, whereas two *different*
+    // types whose paths end alike need one of them aliased. Advising an alias for the first case
+    // sends the user to write `crate::Leaf as Other`, which compiles and buys nothing.
+    let mut seen: HashMap<String, Path> = HashMap::new();
     for e in entries {
         let key = e.matchkey().to_string();
-        if seen.insert(key.clone(), ()).is_some() {
-            emit_error!(
+        let spelling = bare_path(&e.path);
+        match seen.get(&key) {
+            None => {
+                seen.insert(key, e.path.clone());
+            }
+            Some(first) if bare_path(first) == spelling => emit_error!(
                 e.path,
-                "two `visiting(..)` entries share the last segment `{}`; alias one (`path as Alias`)",
-                key
-            );
+                "`visiting(..)` names `{}` twice; remove the duplicate entry",
+                spelling,
+            ),
+            Some(first) => emit_error!(
+                e.path,
+                "two `visiting(..)` entries share the last segment `{}` (`{}` and `{}`), and a \
+                 field's head is matched by that segment alone, so they cannot be told apart. \
+                 Alias one — `{} as SomeOtherName` — and write that name in the field.",
+                key,
+                bare_path(first),
+                spelling,
+                spelling,
+            ),
         }
     }
 }
@@ -359,7 +377,7 @@ pub fn derive_visiting(input: &DeriveInput, nonce: u64) -> TokenStream {
     let attr = parse_visiting(&input.attrs);
     validate_follow(&attr.follow);
     let subast = attr.follow;
-    warn_unmatched_entries(input, &subast);
+    let unmatched_warnings = warn_unmatched_entries(input, &subast);
     // Which crate the generated code names. `#[visiting(crate = ::my_crate)]` points it at a facade
     // that re-exports this crate, which is what a grammar depending only on that facade needs;
     // otherwise the impls read `::visiting::..`.
@@ -403,6 +421,8 @@ pub fn derive_visiting(input: &DeriveInput, nonce: u64) -> TokenStream {
 
     quote! {
         #marker
+
+        #unmatched_warnings
 
         #repeater_items
 
@@ -486,18 +506,56 @@ fn check_ambiguous_last_idents(input: &DeriveInput) {
 ///
 /// `field_head_idents` over-approximates (it collects every segment of every field type), so this
 /// never fires on an entry that is in fact reachable.
-fn warn_unmatched_entries(input: &DeriveInput, subast: &[SubastEntry]) {
+fn warn_unmatched_entries(input: &DeriveInput, subast: &[SubastEntry]) -> TokenStream {
     let field_heads = field_head_idents(input);
+    let mut out = TokenStream::new();
     for e in subast {
         let key = e.matchkey();
         if !field_heads.contains(&key.to_string()) {
-            emit_warning!(
-                e.path,
-                "`#[visiting]` entry `{}` matches no field of `{}`",
-                key,
-                &input.ident
-            );
+            out.extend(unmatched_entry_warning(e, &key, &input.ident));
         }
+    }
+    out
+}
+
+/// A warning rustc will actually print, for an entry that matches no field.
+///
+/// `emit_warning!` cannot be used: off nightly, proc-macro-error3 keeps only `Level::Error`
+/// (`imp/fallback.rs`, `emit_diagnostic`) and renders a warning as an empty `TokenStream`, so the
+/// diagnostic is silently dropped — which is what this used to do. There is no stable way for a
+/// proc macro to raise a warning of its own, so the warning is emitted as *code rustc warns about*:
+/// a deprecated item, used once. Both the item and its use are spanned at the entry, so the
+/// `-->` lands on the path at fault rather than inside generated code.
+///
+/// Everything lives in an anonymous `const` block, so the marker type is not added to the scope the
+/// definition sits in, and the whole thing disappears once the entry is removed or corrected.
+fn unmatched_entry_warning(e: &SubastEntry, key: &Ident, ident: &Ident) -> TokenStream {
+    // The last segment, not the whole path: `Path::span()` has no joined span to give on stable
+    // and falls back to the first token, which would underline `crate`. The last segment is also
+    // the matchkey the message is about.
+    let span = e
+        .path
+        .segments
+        .last()
+        .map_or_else(|| e.path.span(), |s| s.ident.span());
+    // The lint prints `use of deprecated struct `_::<name>`: <note>`, so the name is part of the
+    // sentence the user reads.
+    let name = Ident::new(&format!("unmatched_visiting_entry_{}", key), span);
+    let note = Literal::string(&format!(
+        "`visiting(..)` entry `{}` matches no field of `{}`, so nothing is ever walked through it. \
+         Remove the entry, or correct its path to the type a field actually names (a field's head is \
+         matched by last path segment, so an alias or a type parameter does not match).",
+        key, ident,
+    ));
+    // The *use* is what the lint points at, so it is the token that has to carry the entry's span.
+    let use_site = quote::quote_spanned!(span => #name);
+    quote! {
+        const _: () = {
+            #[deprecated(note = #note)]
+            #[allow(non_camel_case_types)]
+            struct #name;
+            let _: ::core::option::Option<#use_site> = ::core::option::Option::None;
+        };
     }
 }
 
@@ -625,9 +683,10 @@ pub fn check(input: &announce_core::helper::CheckInput) -> TokenStream {
     attr.merge(parse_visiting(&di.attrs));
     validate_follow(&attr.follow);
     check_ambiguous_last_idents(&di);
-    warn_unmatched_entries(&di, &attr.follow);
+    let unmatched_warnings = warn_unmatched_entries(&di, &attr.follow);
     let root = attr.krate.unwrap_or_else(|| parse_quote!(::visiting));
-    node_marker(&di, &attr.follow, &root)
+    let marker = node_marker(&di, &attr.follow, &root);
+    quote! { #marker #unmatched_warnings }
 }
 
 /// Check where the attributes this check owns were written.

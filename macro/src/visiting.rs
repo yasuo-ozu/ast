@@ -591,7 +591,7 @@ fn item_kind(item: &Item) -> &'static str {
 /// It deliberately does *not* emit a metadata macro: announce's trampoline already carries the
 /// definition. Nor does it emit the `Repeater` table the derive writes for context-dependent field
 /// types — announce's own `repeater = ..` covers that, and the two would collide.
-pub fn check(input: announce_helper::CheckInput) -> TokenStream {
+pub fn check(input: &announce_helper::CheckInput) -> TokenStream {
     // Only a struct or an enum can be a node. `#[announce]` also takes a trait, a type alias and an
     // inline `mod`, so the rule has to be stated here rather than left to the visitor, which would
     // report it as a missing definition.
@@ -611,7 +611,7 @@ pub fn check(input: announce_helper::CheckInput) -> TokenStream {
     // since the derive would not see its own attributes either, this check having taken them; and it
     // is caught, because both sides emit the marker impl, so rustc reports E0119 naming the derive
     // and the `#[announce]` that collide.
-    validate_owned_attributes(&input, &di);
+    validate_owned_attributes(input, &di);
     // The follow-list may be written in the check's arguments or in `#[visiting(..)]` on the item,
     // and both at once: one `crate = ..` between them, entries from either. The attribute is the
     // same spelling a deriving type uses, which is the point of owning the name.

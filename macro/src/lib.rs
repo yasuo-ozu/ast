@@ -29,13 +29,15 @@ pub fn derive_visiting(input: TokenStream1) -> TokenStream1 {
     crate::visiting::derive_visiting(&input, random()).into()
 }
 
-announce_helper::check! {
-    /// Declare a node from an `#[announce]` definition, and own the attributes that go inside it.
-    /// See `visiting::visiting`.
-    #[proc_macro_error]
-    pub fn visiting(input) attributes(visiting, seq, opt, skip) {
+/// Declare a node from an `#[announce]` definition, and own the attributes that go inside it.
+/// See `visiting::visiting`.
+#[proc_macro_error]
+#[proc_macro]
+pub fn visiting(input: TokenStream1) -> TokenStream1 {
+    announce_helper::check(input.into(), &["visiting", "seq", "opt", "skip"], |input| {
         Ok(crate::visiting::check(input))
-    }
+    })
+    .into()
 }
 
 #[proc_macro_error]

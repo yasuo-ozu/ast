@@ -11,7 +11,14 @@ keywords = ["ast", "visitor", "syntax-tree", "derive", "proc-macro"]
 categories = ["development-tools::procedural-macro-helpers", "parsing"]
 # The README links the logo by its raw URL, so the file itself need not ship in the crate.
 # The fixture crate exists only for the cross-crate test; it is a workspace member, not content.
-exclude = ["logo.png", "tests/foreign"]
+# The two announce tests go with it: publishing strips their path dev-dependencies, so a packaged
+# copy would declare two test targets that cannot compile.
+exclude = [
+    "logo.png",
+    "tests/foreign",
+    "tests/announce_interop.rs",
+    "tests/announce_foreign.rs",
+]
 
 [workspace]
 members = ["macro"]

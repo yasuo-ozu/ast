@@ -10,22 +10,14 @@ repository = "https://github.com/yasuo-ozu/visiting"
 keywords = ["ast", "visitor", "syntax-tree", "derive", "proc-macro"]
 categories = ["development-tools::procedural-macro-helpers", "parsing"]
 # The README links the logo by its raw URL, so the file itself need not ship in the crate.
-# The fixture crate exists only for the cross-crate test; it is a workspace member, not content.
-# The two announce tests go with it: publishing strips their path dev-dependencies, so a packaged
-# copy would declare two test targets that cannot compile.
-exclude = [
-    "logo.png",
-    "tests/foreign",
-    "tests/announce_interop.rs",
-    "tests/announce_foreign.rs",
-]
+# The fixture crate is a workspace member for the cross-crate test, not content of this one, and it
+# cannot be published (it only announces). `tests/announce_foreign.rs` goes with it: publishing
+# strips a path dev-dependency, so a packaged copy would declare a test target that cannot compile.
+# `tests/announce_interop.rs` needs only `announce`, which is a released dev-dependency, so it ships.
+exclude = ["logo.png", "tests/foreign", "tests/announce_foreign.rs"]
 
 [workspace]
-members = ["macro"]
-# Not a member: it depends on `announce`, whose own dependencies carry a higher MSRV than this
-# crate claims, and the MSRV job checks every member. It is still built — as a path
-# dev-dependency — whenever the tests are.
-exclude = ["tests/foreign"]
+members = ["macro", "tests/foreign"]
 resolver = "2"
 
 [lib]
@@ -39,7 +31,7 @@ visiting-macro = { path = "macro", version = "0.1.0" }
 
 [dev-dependencies]
 trybuild = "1.0"
-# Interop only: the generated code never names `announce`, and the protocol needs no dependency on
-# it. `announce-helper` is a dependency of the macro crate, which parses the protocol.
-announce = { path = "../ozu" }
+# Tests only: the generated code never names `announce`, and a consumer needs no dependency on it.
+# `announce-core` is a dependency of the macro crate, which is what parses the protocol.
+announce = "0.1.0"
 visiting-foreign-fixture = { path = "tests/foreign" }

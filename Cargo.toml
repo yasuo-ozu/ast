@@ -1,6 +1,6 @@
 [package]
 name = "visiting"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.61"
 description = "Walk a derived syntax tree: the Visiting derive and the define_visit! generator"
@@ -27,7 +27,7 @@ path = "lib.rs"
 version_check = "0.9"
 
 [dependencies]
-visiting-macro = { path = "macro", version = "0.1.0" }
+visiting-macro = { path = "macro", version = "0.2.0" }
 
 [dev-dependencies]
 trybuild = "1.0"

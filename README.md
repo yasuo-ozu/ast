@@ -136,24 +136,31 @@ pub enum Expr { Lit(u32) }
 A node has to be declared where it is defined, so a type in a crate that never heard of this one
 cannot be walked. [`announce`](https://docs.rs/announce) publishes a definition's tokens for any
 crate to read, and this crate's metadata speaks announce's protocol — so the definition is reachable.
-What is left is the `Visiting` marker, which only the defining crate may implement. Hand the
-follow-list to `#[announce]` as a check and it is written there:
+What is left is the `Visiting` marker, which only the defining crate may implement. Hand this crate's
+check to `#[announce]` and it is written there:
 
 ```rust,ignore
-#[announce::announce(visiting::visiting(crate::Leaf))]
+#[announce::announce(visiting::visiting)]
+#[visiting(crate::Leaf)]
 pub struct Doc {
-    pub leaf: crate::Leaf,
-    pub rest: ::std::vec::Vec<crate::Leaf>,
+    #[seq]
+    pub leaves: ::std::vec::Vec<crate::Leaf>,
+    #[skip]
+    pub note: crate::Leaf,
 }
 ```
 
-`#[derive(Visiting)]` is not involved. The check takes the attribute's arguments — paths to follow,
-`path as Alias`, `crate = <facade>` — and announce records them in the trampoline, which is where
-`define_visit!(crate::Doc, crate::Leaf)` reads them. Field types are `crate::`-rooted and bounds
-absolute because announce re-uses the payload in the consuming crate; that is announce's own rule.
+`#[derive(Visiting)]` is not involved, and the attributes are the same ones. Rustc knows none of
+them — a derive is what normally declares them — so the check *owns* the four names: `#[announce]`
+removes them from the item it emits and keeps them in the payload, which is where
+`define_visit!(crate::Doc, crate::Leaf)` reads them. `#[announce]` has to sit above them, since
+rustc resolves attributes from the top. The follow-list can also go in the check's own arguments,
+`visiting::visiting(crate::Leaf)`.
 
-`#[seq]`, `#[opt]` and `#[skip]` are helper attributes of the derive, so a node declared this way
-cannot spell them.
+Field types are `crate::`-rooted and bounds absolute because announce re-uses the payload in the
+consuming crate; that is announce's own rule. A type that derives `Visiting` must not also carry the
+check — the derive would never see its attributes — and rustc says so: both sides implement the
+marker, which is a conflicting-implementations error.
 
 ## License
 

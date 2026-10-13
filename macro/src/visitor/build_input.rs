@@ -761,16 +761,20 @@ fn parse_callback_or_state(input: TokenStream) -> syn::Result<BuildInput> {
         if let Ok(state_ts) = unwrap_state(ann.rest.clone()) {
             let mut st: BuildInput = syn::parse2(state_ts)?;
             if let Some(entry) = ann.entries.first() {
-                st.just_def = Some(entry.item()?);
-                // `visiting(..)`, whoever wrote the trampoline: our derive renders the
-                // resolved list, and a `visiting(..)` check on an `#[announce]`d type puts the
-                // definer's own list there. `find_meta` compares last segments, so the check's
-                // `visiting::visiting(..)` matches the same name.
+                let def = entry.item()?;
+                // The follow-list arrives by either of two routes, and a node may use both.
+                // `visiting(..)` in META is what our derive renders (resolved) and what a definer
+                // wrote in the check's arguments — `find_meta` compares last segments, so the
+                // check's own `visiting::visiting(..)` matches the same name. `#[visiting(..)]`
+                // *inside* the definition is the third: an attribute the check owns, which announce
+                // keeps in the payload.
                 if let Some(m) = entry.find_meta("visiting") {
                     if let Some(args) = m.args.clone() {
                         st.just_subast = parse_follow_meta(args)?;
                     }
                 }
+                st.just_subast.extend(parse_follow_attrs(&def)?);
+                st.just_def = Some(def);
             }
             return Ok(st);
         }

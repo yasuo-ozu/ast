@@ -26,21 +26,16 @@ fn random() -> u64 {
 #[proc_macro_derive(Visiting, attributes(visiting, seq, opt, skip))]
 pub fn derive_visiting(input: TokenStream1) -> TokenStream1 {
     let input: DeriveInput = parse_macro_input!(input);
-    // Which crate the generated code names. `#[visiting(crate = ::my_crate)]` points it at a facade
-    // that re-exports this crate, which is what a grammar depending only on that facade needs;
-    // otherwise the impls read `::visiting::..`.
-    let path = visiting::parse_visiting(&input.attrs)
-        .krate
-        .unwrap_or_else(|| parse_quote!(::visiting));
-    crate::visiting::derive_visiting(&input, random(), &path).into()
+    crate::visiting::derive_visiting(&input, random()).into()
 }
 
-/// The `#[visiting(..)]` list as an `announce` definition-side check, so a type that does not
-/// derive `Visiting` can still declare itself a node. See `visiting::visiting`.
-#[proc_macro_error]
-#[proc_macro]
-pub fn visiting(input: TokenStream1) -> TokenStream1 {
-    crate::visiting::check(input.into()).into()
+announce_helper::check! {
+    /// Declare a node from an `#[announce]` definition, and own the attributes that go inside it.
+    /// See `visiting::visiting`.
+    #[proc_macro_error]
+    pub fn visiting(input) attributes(visiting, seq, opt, skip) {
+        Ok(crate::visiting::check(input))
+    }
 }
 
 #[proc_macro_error]

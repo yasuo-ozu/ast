@@ -25,9 +25,10 @@ version_check = "0.9"
 
 [dependencies]
 visiting-macro = { path = "macro", version = "0.1.0" }
-announce = { path = "../ozu/announce" }
-announce-helper = { path = "../ozu/announce-helper" }
 
 [dev-dependencies]
 trybuild = "1.0"
+# Interop only: the generated code never names `announce`, and the protocol needs no dependency on
+# it. `announce-helper` is a dependency of the macro crate, which parses the protocol.
+announce = { path = "../ozu" }
 visiting-foreign-fixture = { path = "tests/foreign" }

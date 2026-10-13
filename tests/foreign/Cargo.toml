@@ -11,5 +11,5 @@ publish = false
 path = "src/lib.rs"
 
 [dependencies]
-announce = { path = "../../../ozu/announce" }
+announce = { path = "../../../ozu" }
 visiting = { path = "../.." }

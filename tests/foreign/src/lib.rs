@@ -40,3 +40,21 @@ pub mod alias {
 pub struct Aliased {
     pub twin: crate::alias::Twin,
 }
+
+/// The follow-list written *inside* the definition, exactly as a deriving type writes it, together
+/// with the field markers `#[seq]`, `#[opt]` and `#[skip]`.
+///
+/// None of those four names is an attribute rustc knows, and no derive declares them here. The
+/// `visiting(..)` check owns them: `#[announce]` asks it which names it owns, strips them from the
+/// item it emits, and keeps them in the payload a visitor reads. `#[announce]` has to sit above
+/// them, since rustc resolves attributes from the top.
+#[announce::announce(visiting::visiting)]
+#[visiting(crate::Leaf)]
+pub struct Marked {
+    #[seq]
+    pub many: ::std::vec::Vec<crate::Leaf>,
+    #[opt]
+    pub maybe: ::core::option::Option<crate::Leaf>,
+    #[skip]
+    pub hidden: crate::Leaf,
+}

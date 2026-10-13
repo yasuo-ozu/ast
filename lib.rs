@@ -24,9 +24,10 @@
 //! A node has to be declared where it is defined, which is a problem for a type in a crate that has
 //! never heard of this one. [`announce`] already solves half of it — it publishes a definition's
 //! tokens for any crate to read — and this crate's metadata now speaks announce's protocol, so a
-//! walk can fetch an announced definition. The other half is the [`Visiting`] marker, which only the
-//! defining crate may implement. [`visiting`](macro@crate::visiting) is that half: the follow-list
-//! handed to `#[announce]` as a check, expanded beside the definition.
+//! walk can fetch an announced definition. The other half is the declaration — the [`Visiting`]
+//! marker, which only the defining crate may implement, and the attributes a node is written with,
+//! which rustc rejects where no derive declares them. [`visiting`](macro@crate::visiting) is that
+//! half: a check handed to `#[announce]`, expanded beside the definition, owning the attributes.
 //!
 //! [`announce`]: https://docs.rs/announce
 
@@ -107,7 +108,7 @@ pub mod visit {
 /// ```
 pub use visiting_macro::Visiting;
 
-/// The `#[visiting(..)]` list as an [`announce`] check, for a type that does not derive [`Visiting`].
+/// Declare a node from an [`announce`] definition, with no derive of ours.
 ///
 /// `announce` solves the first half of the same problem this crate does: it puts a definition's
 /// tokens in a `macro_rules!` beside the item so another crate can read them. A type carrying
@@ -116,31 +117,43 @@ pub use visiting_macro::Visiting;
 /// announced type had to be marked by hand, and a type from a crate that merely announces could not
 /// be marked at all.
 ///
-/// Pass this macro to `#[announce]` as a check and both halves arrive together:
+/// Pass this macro to `#[announce]` as a check:
 ///
 /// ```ignore
-/// #[announce::announce(visiting::visiting(crate::Leaf))]
+/// #[announce::announce(visiting::visiting)]
+/// #[visiting(crate::Leaf)]
 /// pub struct Doc {
-///     pub leaf: Leaf,
+///     #[seq]
+///     pub leaves: ::std::vec::Vec<crate::Leaf>,
+///     #[skip]
+///     pub note: crate::Leaf,
 /// }
 /// ```
 ///
-/// announce invokes the check beside the definition — where the marker impl is legal — and records
-/// `visiting(crate::Leaf)` in the trampoline's metadata, which is where a generated visitor reads a
-/// node's follow-list from. `define_visit!(crate::Doc, crate::Leaf)` then builds a visitor over
-/// types that derive nothing of ours.
+/// announce invokes the check beside the definition — where the marker impl is legal — and
+/// `define_visit!(crate::Doc, crate::Leaf)` builds a visitor over types that derive nothing of ours.
 ///
-/// The argument list is exactly the attribute's: paths to follow, `path as Alias`, and
-/// `crate = <facade>`. The same rules apply, for the same reasons — see [`Visiting`].
+/// # The attributes are the same ones
 ///
-/// # What it does not carry
+/// `#[visiting(..)]`, `#[seq]`, `#[opt]` and `#[skip]` are not attributes rustc knows; a derive is
+/// what normally declares them, and there is no derive here. The check *owns* the four names
+/// instead: `#[announce]` asks it which names it owns, removes them from the item it emits, and
+/// keeps them in the payload a visitor reads. So a node declares itself exactly as a deriving one
+/// does, and the rules are the same ones — see [`Visiting`].
 ///
-/// * `#[seq]`, `#[opt]` and `#[skip]` are helper attributes of the derive. A type that does not
-///   derive cannot spell them, so a node declared this way is walked field by field.
-/// * The derive's `Repeater` table, which names a context-dependent field type portably, is
-///   announce's `repeater = ..` here.
-/// * Write the list in one place. Carrying both `#[visiting(..)]` and a check is an error, since the
-///   type would be marked twice.
+/// `#[announce]` has to sit **above** them, since rustc resolves attributes from the top.
+///
+/// The follow-list may also be written in the check's own arguments,
+/// `visiting::visiting(crate::Leaf)`, which is where it ends up in the trampoline's metadata. Use
+/// whichever reads better; a node may use both, and `crate = <facade>` goes in either.
+///
+/// # Two things it does not do
+///
+/// * It does not emit the `Repeater` table the derive writes for a field type that only resolves in
+///   the defining crate. That is announce's own `repeater = ..`, and the two would collide.
+/// * It does not go together with `#[derive(Visiting)]` on one type. The derive would never see its
+///   attributes, because the check owns them and announce strips them first. Both sides implement
+///   the marker, so rustc reports the conflict (E0119) rather than letting it pass.
 ///
 /// [`announce`]: https://docs.rs/announce
 pub use visiting_macro::visiting;

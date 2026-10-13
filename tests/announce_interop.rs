@@ -5,10 +5,11 @@
 //! spelled the handshake differently, so this crate's trampoline now answers announce's calling
 //! convention and every fetch uses it.
 //!
-//! The rest is the `Visiting` marker, which only the defining crate may write. `#[visiting(..)]` is
-//! therefore also available as an announce *check*: announce invokes it beside the definition, where
-//! the impl is legal, and records the follow-list in the trampoline's metadata, where a visitor
-//! reads it. Nothing below derives anything of ours.
+//! The rest is the declaration: the `Visiting` marker, which only the defining crate may write, and
+//! the attributes a node is written with, which rustc rejects where no derive declares them. Both
+//! come from an announce *check*, invoked beside the definition. Nothing below derives anything of
+//! ours. The check's arguments carry the follow-list here; `tests/announce_foreign.rs` writes it as
+//! `#[visiting(..)]` inside the definition instead, and uses the field markers.
 //!
 //! Field types are written `crate::Leaf` rather than `Leaf`, and bounds absolutely, because
 //! announce's payload is re-used in another crate: that is its own rule, and it applies to any

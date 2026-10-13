@@ -165,6 +165,30 @@ pub(crate) fn parse_follow_meta(ts: TokenStream) -> Result<Vec<SubEntry>> {
         .collect())
 }
 
+/// Read the follow-list a node wrote as `#[visiting(..)]` *inside* the definition.
+///
+/// A definition fetched from an `announce` trampoline still carries it: the check that declared the
+/// node owns the attribute name, so announce strips it from the item it emits but keeps it in the
+/// payload — here. Our own derive strips it instead and renders the list into META, so only one of
+/// the two ever has entries. Parsing only: the definition was validated where it was written.
+pub(crate) fn parse_follow_attrs(item: &Item) -> Result<Vec<SubEntry>> {
+    let attrs: &[Attribute] = match item {
+        Item::Struct(s) => &s.attrs,
+        Item::Enum(e) => &e.attrs,
+        Item::Union(u) => &u.attrs,
+        _ => return Ok(Vec::new()),
+    };
+    let mut out = Vec::new();
+    for a in attrs.iter().filter(|a| a.path().is_ident("visiting")) {
+        let tokens = match &a.meta {
+            Meta::List(ml) => ml.tokens.clone(),
+            _ => continue,
+        };
+        out.extend(parse_follow_meta(tokens)?);
+    }
+    Ok(out)
+}
+
 pub(crate) fn parse_subentries(ts: TokenStream) -> Result<Vec<SubEntry>> {
     Ok(Punctuated::<SubEntry, Token![,]>::parse_terminated
         .parse2(ts)?

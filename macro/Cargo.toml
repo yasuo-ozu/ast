@@ -19,7 +19,10 @@ quote = "1.0"
 template-quote = "0.4"
 proc-macro-error3 = { version = "3", default-features = false }
 type-leak = "0.7.0"
-announce-helper = { path = "../../ozu/announce-helper" }
+# Only the protocol parser is used (`Input`, `Entry`, `CheckInput`, `OwnedAttrs`). Its default
+# `type-leak` feature would add a second copy of that crate beside the one below, for the
+# `type_leak(..)` META we never read: our own `Repeater` table is built with `type-leak` directly.
+announce-helper = { path = "../../ozu/announce-helper", default-features = false }
 
 [dependencies.syn]
 version = "2.0"

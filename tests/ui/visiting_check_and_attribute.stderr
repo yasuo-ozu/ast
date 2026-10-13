@@ -1,5 +1,9 @@
-error: this type carries both `#[visiting(..)]` and a `visiting(..)` check; keep one — the check is for a type that does not derive `Visiting`
+error[E0119]: conflicting implementations of trait `Visiting` for type `Doc`
   --> tests/ui/visiting_check_and_attribute.rs:14:1
    |
-14 | #[visiting(crate::Leaf)]
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
+13 | #[derive(visiting::Visiting)]
+   |          ------------------ first implementation here
+14 | #[announce::announce(macro_name = DocAnnounced, visiting::visiting(crate::Leaf))]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ conflicting implementation for `Doc`
+   |
+   = note: this error originates in the macro `visiting::visiting` (in Nightly builds, run with -Z macro-backtrace for more info)

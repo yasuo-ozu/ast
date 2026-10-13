@@ -148,8 +148,8 @@ impl VisitingAttribute {
 
 /// Read every `#[visiting(..)]` on the type, in one pass.
 ///
-/// Each path to follow must be fully qualified (see `subast_path_is_rooted`), and two resolving to
-/// the same `matchkey` is an error (a bare field head can't disambiguate them — alias one).
+/// Parsing only: the caller validates the list it ends up with ([`validate_follow`]), since the
+/// check merges this with a list of its own and a complaint should be made once.
 pub(crate) fn parse_visiting(attrs: &[Attribute]) -> VisitingAttribute {
     let mut args = VisitingAttribute::default();
     for attr in attrs {
@@ -171,7 +171,6 @@ pub(crate) fn parse_visiting(attrs: &[Attribute]) -> VisitingAttribute {
             Err(e) => emit_error!(e.span(), "invalid `#[visiting(..)]`: {}", e),
         }
     }
-    validate_follow(&args.follow);
     args
 }
 
@@ -343,7 +342,7 @@ fn for_each_field_type_of(data: &Data, f: &mut dyn FnMut(&Type)) {
 ///   plus the `#[visiting]` allowlist, and
 /// * a macro-namespace re-export under the type's own name so a generated visitor can reach it as
 ///   `path::to::T! { .. }`.
-pub fn derive_visiting(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStream {
+pub fn derive_visiting(input: &DeriveInput, nonce: u64) -> TokenStream {
     let ident = &input.ident;
     let (_, _, where_clause) = input.generics.split_for_impl();
 
@@ -358,8 +357,14 @@ pub fn derive_visiting(input: &DeriveInput, nonce: u64, root: &Path) -> TokenStr
     }
 
     check_ambiguous_last_idents(input);
-    let subast = parse_visiting(&input.attrs).follow;
+    let attr = parse_visiting(&input.attrs);
+    validate_follow(&attr.follow);
+    let subast = attr.follow;
     warn_unmatched_entries(input, &subast);
+    // Which crate the generated code names. `#[visiting(crate = ::my_crate)]` points it at a facade
+    // that re-exports this crate, which is what a grammar depending only on that facade needs;
+    // otherwise the impls read `::visiting::..`.
+    let root = &attr.krate.unwrap_or_else(|| parse_quote!(::visiting));
 
     let subast_entry_tokens = subast_tokens(&subast);
 
@@ -569,13 +574,14 @@ fn item_kind(item: &Item) -> &'static str {
     }
 }
 
-/// `visiting::visiting!` — the `#[visiting(..)]` list, written as an `announce` definition-side
-/// check instead of as an attribute of our derive.
+/// `visiting::visiting!` — the node declaration as an `announce` definition-side check.
 ///
-/// `#[announce(visiting::visiting(crate::Leaf))]` asks announce for two things. It records
-/// `visiting(crate::Leaf)` in the trampoline's META, which is where a generated visitor reads a
-/// node's follow-list from, whichever macro emitted that trampoline. And it invokes this macro
-/// beside the definition, as `visiting! { (crate::Leaf), ITEM }`.
+/// `#[announce(visiting::visiting)]` asks announce for three things. It invokes this macro beside
+/// the definition, as `visiting! { (ARGS), ITEM }`. It lets the item carry our attributes —
+/// `#[visiting(..)]`, `#[seq]`, `#[opt]`, `#[skip]` — which this check *owns*: announce strips them
+/// from the item it emits (rustc would reject what no derive declares) and keeps them in the payload
+/// a visitor reads. And it records the check's own arguments in META, so a follow-list may be
+/// written there instead.
 ///
 /// Being expanded *beside the definition* is the whole point. The `Visiting` marker impl belongs to
 /// the crate that owns the type, so a visitor in another crate cannot supply it — which is why an
@@ -586,16 +592,12 @@ fn item_kind(item: &Item) -> &'static str {
 /// It deliberately does *not* emit a metadata macro: announce's trampoline already carries the
 /// definition. Nor does it emit the `Repeater` table the derive writes for context-dependent field
 /// types — announce's own `repeater = ..` covers that, and the two would collide.
-pub fn check(input: TokenStream) -> TokenStream {
-    let announce_helper::CheckInput { args, item } = match syn::parse2(input) {
-        Ok(c) => c,
-        Err(e) => return e.to_compile_error(),
-    };
+pub fn check(input: announce_helper::CheckInput) -> TokenStream {
     // Only a struct or an enum can be a node. `#[announce]` also takes a trait, a type alias and an
     // inline `mod`, so the rule has to be stated here rather than left to the visitor, which would
     // report it as a missing definition.
-    let kind = item_kind(&item);
-    let di: DeriveInput = match item {
+    let kind = item_kind(&input.item);
+    let di: DeriveInput = match input.item.clone() {
         Item::Struct(s) => s.into(),
         Item::Enum(e) => e.into(),
         other => abort!(
@@ -604,25 +606,101 @@ pub fn check(input: TokenStream) -> TokenStream {
             kind
         ),
     };
-    // The list has one home. Written twice it would also be marked twice, and the duplicate
-    // `impl Visiting` is reported against generated code rather than against either spelling.
-    if let Some(attr) = di.attrs.iter().find(|a| a.path().is_ident("visiting")) {
-        abort!(
-            attr,
-            "this type carries both `#[visiting(..)]` and a `visiting(..)` check; keep one — the \
-             check is for a type that does not derive `Visiting`"
-        );
-    }
-    let attr = match VisitingAttribute::parse.parse2(args) {
+    // A derive of ours on the same item cannot be detected here: rustc removes `#[derive(..)]`
+    // before the capture derive that `#[announce]` hangs the check off runs, so the attribute list
+    // never holds it (verified — the check sees only the attributes it owns). It is a real mistake,
+    // since the derive would not see its own attributes either, this check having taken them; and it
+    // is caught, because both sides emit the marker impl, so rustc reports E0119 naming the derive
+    // and the `#[announce]` that collide.
+    validate_owned_attributes(&input, &di);
+    // The follow-list may be written in the check's arguments or in `#[visiting(..)]` on the item,
+    // and both at once: one `crate = ..` between them, entries from either. The attribute is the
+    // same spelling a deriving type uses, which is the point of owning the name.
+    let mut attr = match VisitingAttribute::parse.parse2(input.args.clone()) {
         Ok(a) => a,
         Err(e) => {
             emit_error!(e.span(), "invalid `visiting(..)` check: {}", e);
             VisitingAttribute::default()
         }
     };
+    attr.merge(parse_visiting(&di.attrs));
     validate_follow(&attr.follow);
     check_ambiguous_last_idents(&di);
     warn_unmatched_entries(&di, &attr.follow);
     let root = attr.krate.unwrap_or_else(|| parse_quote!(::visiting));
     node_marker(&di, &attr.follow, &root)
+}
+
+/// Check where the attributes this check owns were written.
+///
+/// Misplacement is worth an error rather than silence: an ignored `#[seq]` is a field that is walked
+/// the plain way, which no test notices. `#[visiting(..)]` declares the *type*'s follow-list and is
+/// read from the item; the three field markers belong to a field, and take no arguments.
+fn validate_owned_attributes(input: &announce_helper::CheckInput, di: &DeriveInput) {
+    fn is_marker(a: &Attribute) -> bool {
+        ["seq", "opt", "skip"].iter().any(|n| a.path().is_ident(n))
+    }
+    fn marker_name(a: &Attribute) -> String {
+        a.path().segments.last().unwrap().ident.to_string()
+    }
+    for a in &di.attrs {
+        if is_marker(a) {
+            emit_error!(a, "`#[{}]` marks a field, not the type", marker_name(a));
+        }
+    }
+    if let Data::Enum(e) = &di.data {
+        for v in &e.variants {
+            for a in &v.attrs {
+                if is_marker(a) {
+                    emit_error!(a, "`#[{}]` marks a field, not a variant", marker_name(a));
+                } else if a.path().is_ident("visiting") {
+                    emit_error!(
+                        a,
+                        "`#[visiting(..)]` declares the type's follow-list; write it on the \
+                         type (or in the check's arguments), not on a variant"
+                    );
+                }
+            }
+        }
+    }
+    for f in data_field_iter(&di.data) {
+        for a in &f.attrs {
+            if a.path().is_ident("visiting") {
+                emit_error!(
+                    a,
+                    "`#[visiting(..)]` declares the type's follow-list; write it on the type \
+                     (or in the check's arguments), not on a field"
+                );
+            } else if is_marker(a) && !matches!(a.meta, Meta::Path(_)) {
+                emit_error!(a, "`#[{}]` takes no arguments", marker_name(a));
+            }
+        }
+    }
+    // Anywhere else syn parses an attribute — a generic parameter, a where-predicate — a marker is
+    // neither read nor rejected above, and announce would still strip it. The owned list announce
+    // hands back is the whole set, so a count that does not add up means one is somewhere unexpected.
+    let accounted = di.attrs.iter().filter(|a| input.owned.owns(a)).count()
+        + data_field_iter(&di.data)
+            .flat_map(|f| f.attrs.iter())
+            .filter(|a| input.owned.owns(a))
+            .count()
+        + match &di.data {
+            Data::Enum(e) => e
+                .variants
+                .iter()
+                .flat_map(|v| v.attrs.iter())
+                .filter(|a| input.owned.owns(a))
+                .count(),
+            _ => 0,
+        };
+    let found = input.owned_attributes().len();
+    if found > accounted {
+        emit_error!(
+            di.ident,
+            "{} of this type's `#[visiting]`/`#[seq]`/`#[opt]`/`#[skip]` attributes {} written \
+             somewhere a visitor does not read — not on the type, a variant or a field",
+            found - accounted,
+            if found - accounted == 1 { "is" } else { "are" }
+        );
+    }
 }

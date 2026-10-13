@@ -1,0 +1,23 @@
+error: `#[seq]` marks a field, not the type
+  --> tests/ui/visiting_check_misplaced_attrs.rs:11:1
+   |
+11 | #[seq]
+   | ^^^^^^
+
+error: `#[visiting(..)]` declares the type's follow-list; write it on the type (or in the check's arguments), not on a field
+  --> tests/ui/visiting_check_misplaced_attrs.rs:18:5
+   |
+18 |     #[visiting(crate::Leaf)]
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: `#[seq]` takes no arguments
+  --> tests/ui/visiting_check_misplaced_attrs.rs:20:5
+   |
+20 |     #[seq(crate::Leaf)]
+   |     ^^^^^^^^^^^^^^^^^^^
+
+error: `#[opt]` marks a field, not a variant
+  --> tests/ui/visiting_check_misplaced_attrs.rs:27:5
+   |
+27 |     #[opt]
+   |     ^^^^^^

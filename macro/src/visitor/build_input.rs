@@ -757,7 +757,7 @@ fn parse_callback_or_state(input: TokenStream) -> syn::Result<BuildInput> {
         (p as fn(syn::parse::ParseStream) -> syn::Result<TokenStream>).parse2(ts)
     }
 
-    if let Ok(ann) = announce_helper::Input::parse.parse2(input.clone()) {
+    if let Ok(ann) = announce_core::helper::Input::parse.parse2(input.clone()) {
         if let Ok(state_ts) = unwrap_state(ann.rest.clone()) {
             let mut st: BuildInput = syn::parse2(state_ts)?;
             if let Some(entry) = ann.entries.first() {

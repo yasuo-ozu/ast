@@ -19,10 +19,11 @@ quote = "1.0"
 template-quote = "0.4"
 proc-macro-error3 = { version = "3", default-features = false }
 type-leak = "0.7.0"
-# Only the protocol parser is used (`Input`, `Entry`, `CheckInput`, `OwnedAttrs`). Its default
-# `type-leak` feature would add a second copy of that crate beside the one below, for the
-# `type_leak(..)` META we never read: our own `Repeater` table is built with `type-leak` directly.
-announce-helper = { path = "../../ozu/announce-helper", default-features = false }
+# Only the protocol parser is used, `announce_core::helper` (`Input`, `Entry`, `CheckInput`,
+# `OwnedAttrs`). `announce` itself re-exports the same module as `announce::helper`, but a proc macro
+# needs nothing else of it, and depending on the core crate keeps the consumer-side crate out of the
+# build graph.
+announce-core = { path = "../../ozu/announce-core" }
 
 [dependencies.syn]
 version = "2.0"

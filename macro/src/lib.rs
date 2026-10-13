@@ -34,7 +34,7 @@ pub fn derive_visiting(input: TokenStream1) -> TokenStream1 {
 #[proc_macro_error]
 #[proc_macro]
 pub fn visiting(input: TokenStream1) -> TokenStream1 {
-    announce_helper::check(input.into(), &["visiting", "seq", "opt", "skip"], |input| {
+    announce_core::helper::check(input.into(), &["visiting", "seq", "opt", "skip"], |input| {
         Ok(crate::visiting::check(input))
     })
     .into()

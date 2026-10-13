@@ -36,6 +36,13 @@ jobs:
           CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
         run: cargo generate-lockfile
 
+      # One dependency the fallback resolver cannot place: `unicode-width` (reached through
+      # `announce-core -> type-leak -> safegraph`, which asks for `"0.1"`) publishes no
+      # `rust-version`, so the resolver has nothing to honour and takes the newest 0.1.x —
+      # 0.1.13 wants 1.62 and 0.1.14 `mixed_integer_ops`. 0.1.12 is the last that builds here.
+      - name: Pin the one dependency that declares no rust-version
+        run: cargo update -p unicode-width --precise 0.1.12
+
       - name: Install Rust ${{ steps.msrv.outputs.version }}
         run: |
           rustup toolchain install ${{ steps.msrv.outputs.version }} --profile minimal --no-self-update

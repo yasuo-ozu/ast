@@ -591,7 +591,7 @@ fn item_kind(item: &Item) -> &'static str {
 /// It deliberately does *not* emit a metadata macro: announce's trampoline already carries the
 /// definition. Nor does it emit the `Repeater` table the derive writes for context-dependent field
 /// types — announce's own `repeater = ..` covers that, and the two would collide.
-pub fn check(input: &announce_helper::CheckInput) -> TokenStream {
+pub fn check(input: &announce_core::helper::CheckInput) -> TokenStream {
     // Only a struct or an enum can be a node. `#[announce]` also takes a trait, a type alias and an
     // inline `mod`, so the rule has to be stated here rather than left to the visitor, which would
     // report it as a missing definition.
@@ -635,7 +635,7 @@ pub fn check(input: &announce_helper::CheckInput) -> TokenStream {
 /// Misplacement is worth an error rather than silence: an ignored `#[seq]` is a field that is walked
 /// the plain way, which no test notices. `#[visiting(..)]` declares the *type*'s follow-list and is
 /// read from the item; the three field markers belong to a field, and take no arguments.
-fn validate_owned_attributes(input: &announce_helper::CheckInput, di: &DeriveInput) {
+fn validate_owned_attributes(input: &announce_core::helper::CheckInput, di: &DeriveInput) {
     fn is_marker(a: &Attribute) -> bool {
         ["seq", "opt", "skip"].iter().any(|n| a.path().is_ident(n))
     }

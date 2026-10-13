@@ -246,7 +246,7 @@ pub(crate) fn gen_side(
             let method_where: Vec<WherePredicate> = t
                 .own_where
                 .iter()
-                .filter(|p| where_pred_param(p).is_some_and(|id| mp_names.contains(&id.to_string())))
+                .filter(|p| where_pred_param(p).map_or(false, |id| mp_names.contains(&id.to_string())))
                 .cloned()
                 .collect();
             // Trait method: `where Self: Sized` (struct-only) + the method-param bounds.

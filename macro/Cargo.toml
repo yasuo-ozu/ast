@@ -2,7 +2,7 @@
 name = "visiting-macro"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.71"
+rust-version = "1.61"
 description = "Proc macros for the `visiting` crate"
 license = "MIT"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]

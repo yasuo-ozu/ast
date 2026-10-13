@@ -2,7 +2,7 @@
 name = "visiting"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.71"
+rust-version = "1.61"
 description = "Walk a derived syntax tree: the Visiting derive and the define_visit! generator"
 license = "MIT"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
@@ -14,7 +14,11 @@ categories = ["development-tools::procedural-macro-helpers", "parsing"]
 exclude = ["logo.png", "tests/foreign"]
 
 [workspace]
-members = ["macro", "tests/foreign"]
+members = ["macro"]
+# Not a member: it depends on `announce`, whose own dependencies carry a higher MSRV than this
+# crate claims, and the MSRV job checks every member. It is still built — as a path
+# dev-dependency — whenever the tests are.
+exclude = ["tests/foreign"]
 resolver = "2"
 
 [lib]

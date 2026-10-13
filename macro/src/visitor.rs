@@ -164,7 +164,7 @@ fn intermediate_impls(
 ) -> Vec<TokenStream> {
     st.done
         .iter()
-        .filter(|d| item_ident(&d.def).is_some_and(|id| !m.method_set.contains(&id.to_string())))
+        .filter(|d| item_ident(&d.def).map_or(false, |id| !m.method_set.contains(&id.to_string())))
         .flat_map(|d| {
             let own_use = angle(&gargs(item_generics(&d.def).unwrap()));
             let mut preds = union_where.to_vec();

@@ -7,6 +7,10 @@ edition = "2021"
 rust-version = "1.71"
 publish = false
 
+# Its own workspace: the crate next door excludes it, so that it can need a newer rustc than the
+# crate under test claims without the MSRV job having to build it.
+[workspace]
+
 [lib]
 path = "src/lib.rs"
 

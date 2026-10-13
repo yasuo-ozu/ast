@@ -60,10 +60,9 @@ pub(crate) fn subast_tokens(entries: &[SubastEntry]) -> Vec<TokenStream> {
 /// downstream-portable — the recommended canonical form).
 pub(crate) fn crate_rooted_tokens(path: &Path) -> TokenStream {
     let rooted = path.leading_colon.is_none()
-        && path
-            .segments
-            .first()
-            .is_some_and(|s| s.ident == "crate" && matches!(s.arguments, PathArguments::None));
+        && path.segments.first().map_or(false, |s| {
+            s.ident == "crate" && matches!(s.arguments, PathArguments::None)
+        });
     if rooted {
         let rest: Vec<&PathSegment> = path.segments.iter().skip(1).collect();
         quote!( $crate #(:: #rest)* )

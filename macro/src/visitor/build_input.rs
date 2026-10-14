@@ -31,6 +31,11 @@ pub(crate) struct BuildInput {
     /// The direct base's *own* targets, as opposed to what it inherited in turn — the `declares` set
     /// for the first link of the chain, which `@anc` only carries for the links above it.
     pub(crate) base_own: Vec<Decl>,
+    /// Whether the base's `visit_*` methods require `Self: Sized` — true in heterogeneous mode,
+    /// where a type's non-shared parameters become method generics. It travels because an extender
+    /// has to match it: its own forwarding impls must satisfy the base's as a supertrait, and a
+    /// `?Sized` visitor cannot.
+    pub(crate) base_sized_self: bool,
     /// Path of the type whose `@ast`/`@subast` trail in this bounce (so the fetched def is recorded
     /// under the path it was fetched by). Empty before any type is fetched.
     pub(crate) fetching: Option<Path>,
@@ -67,10 +72,17 @@ pub(crate) fn parse_section(input: ParseStream) -> Result<(Ident, TokenStream)> 
 /// is written with (`Expr` + `<S>`). The arguments are carried rather than recomputed because an
 /// extender knows an ancestor's parameters as a whole but not how each of its types divides them
 /// up, and an override's signature has to match the trait's exactly.
+///
+/// A `?` after the name marks a *method-generic* declaration: in heterogeneous mode a type's
+/// non-shared params ride its `visit_*` as generics, so the method is quantified per call. Such a
+/// one carries no arguments — they name params the extender does not have — and nothing an extender
+/// writes can be `for<T>` generic, so it gets neither a closure hook nor an `impl_chain!` arm. The
+/// mark is kept rather than the entry dropped so the chain check can say which case it is.
 #[derive(Clone)]
 pub(crate) struct Decl {
     pub(crate) ident: Ident,
     pub(crate) args: TokenStream,
+    pub(crate) method_generic: bool,
 }
 
 impl Parse for Decl {
@@ -82,7 +94,12 @@ impl Parse for Decl {
         } else {
             TokenStream::new()
         };
-        Ok(Decl { ident, args })
+        let method_generic = input.parse::<Option<Token![?]>>()?.is_some();
+        Ok(Decl {
+            ident,
+            args,
+            method_generic,
+        })
     }
 }
 
@@ -102,7 +119,7 @@ pub(crate) fn emit_decls(decls: &[Decl]) -> TokenStream {
         .iter()
         .map(|d| {
             let (i, a) = (&d.ident, &d.args);
-            quote!(#i #a)
+            quote!( #i #a #(if d.method_generic) { ? } )
         })
         .collect();
     quote!( #(#parts)* )
@@ -184,6 +201,7 @@ pub(crate) fn emit_visited_macro(
     g_params: &[GenericParam],
     anc_export: TokenStream,
     own: &[Decl],
+    sized_self: bool,
 ) -> TokenStream {
     let all_visible: Vec<TokenStream> = st
         .visited
@@ -212,7 +230,7 @@ pub(crate) fn emit_visited_macro(
             (@visited $cb:path { $($pre:tt)* }) => {
                 $cb ! {
                     $($pre)* @inh { #(#all_visible),* } @bg { #(#g_params),* } @an { #anc_export }
-                    @own { #own }
+                    @own { #own } @sz { #(if sized_self) { yes } }
                 }
             };
         }
@@ -292,6 +310,9 @@ pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> To
     let decl_parts = |a: &Ancestor, hops: &[&Ident]| -> Vec<(Ident, Ident, TokenStream)> {
         a.declares
             .iter()
+            // A method-generic one is quantified per call, and a muncher arm cannot be: it would
+            // have to name the type parameters in the signature it writes. `#mg` reports it.
+            .filter(|d| !d.method_generic)
             .map(|d| {
                 let alias = Ident::new(&format!("__visiting_ty_{}", d.ident), Span::call_site());
                 let args = &d.args;
@@ -383,6 +404,16 @@ pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> To
     let all: Vec<Ident> = ancestors
         .iter()
         .flat_map(|a| a.declares.iter())
+        .filter(|d| !d.method_generic)
+        .flat_map(|d| Side::both().map(|side| side.method(&d.ident)))
+        .collect();
+    // Declared, but not writable here: the method takes its own type parameters. Accepting it would
+    // make every muncher drop it and the override silently do nothing; the bare "no ancestor
+    // declares it" message would be wrong, since one does.
+    let mg_all: Vec<Ident> = ancestors
+        .iter()
+        .flat_map(|a| a.declares.iter())
+        .filter(|d| d.method_generic)
         .flat_map(|d| Side::both().map(|side| side.method(&d.ident)))
         .collect();
     quote! {
@@ -399,6 +430,17 @@ pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> To
                 };
                 ($($vm:ident)::+; fn #all ; $($rest:tt)*) => {
                     $($vm)::+ ::#chain_mod::#check_pub!($($vm)::+; $($rest)*);
+                };
+            )*
+            #(
+                ($($vm:ident)::+; $(#[$at:meta])* fn #mg_all $($rest:tt)*) => {
+                    ::core::compile_error!(::core::concat!(
+                        "`", ::core::stringify!(#mg_all),
+                        "` takes its own type parameters, so `impl_chain!` cannot write it: \
+                         nothing it generates can be `for<T>` generic. Its node's parameters are \
+                         not its visitor's, which is what makes the method generic. Write that \
+                         ancestor's `impl Visit` out by hand instead."
+                    ));
                 };
             )*
             ($($vm:ident)::+; $(#[$at:meta])* fn $other:ident $($rest:tt)*) => {
@@ -617,6 +659,7 @@ impl Parse for BuildInput {
         let mut base_generics = Vec::new();
         let mut base_ancestors = Vec::new();
         let mut base_own = Vec::new();
+        let mut base_sized_self = false;
         let mut fetching = None;
         let mut done = Vec::new();
         let mut rest = Vec::new();
@@ -653,6 +696,8 @@ impl Parse for BuildInput {
                 // `@anc` is the carried ancestor chain; `@an` is appended by a base's macro.
                 "anc" | "an" => base_ancestors = parse_ancestors(content)?,
                 "own" => base_own = parse_decls(content)?,
+                // `@sized` is the carried flag; `@sz` is appended by a base's macro.
+                "sized" | "sz" => base_sized_self = !content.is_empty(),
                 "fetching" => {
                     if !content.is_empty() {
                         fetching = Some(syn::parse2(content)?);
@@ -678,6 +723,7 @@ impl Parse for BuildInput {
             base_generics,
             base_ancestors,
             base_own,
+            base_sized_self,
             fetching,
             done,
             rest,
@@ -713,6 +759,7 @@ pub(crate) fn state_tokens(
     base_generics: &[GenericParam],
     anc: &TokenStream, // emit_ancestors(&base_ancestors) or quote!()
     own: &TokenStream,
+    sized_self: bool,
     fetching: &TokenStream,
     done: &TokenStream, // emit_done(&done) or quote!()
     rest: &[Path],
@@ -726,6 +773,7 @@ pub(crate) fn state_tokens(
         @baseg { #(#base_generics),* }
         @anc { #anc }
         @own { #own }
+        @sized { #(if sized_self) { yes } }
         @fetching { #fetching }
         @done { #done }
         @rest { #(#rest),* }
@@ -828,6 +876,7 @@ pub fn build(input: TokenStream) -> TokenStream {
             base_generics,
             base_ancestors,
             base_own,
+            base_sized_self,
             done,
             rest,
             ..
@@ -844,6 +893,7 @@ pub fn build(input: TokenStream) -> TokenStream {
             base_generics,
             &anc_ts,
             &emit_decls(base_own),
+            *base_sized_self,
             &quote!(#next),
             &done_ts,
             rest,

@@ -35,6 +35,7 @@ fn diagnostics() {
     t.compile_fail("tests/ui/derive_visiting_on_a_union.rs");
     // `impl_chain!` given a method no ancestor declares.
     t.compile_fail("tests/ui/impl_chain_unknown_method.rs");
+    t.compile_fail("tests/ui/impl_chain_method_generic.rs");
     // Marker on a non-viewable / container-less / non-visited field → clean abort, not a cryptic trait error.
     t.compile_fail("tests/ui/edit_marker_array.rs");
     t.compile_fail("tests/ui/edit_marker_noncontainer.rs");

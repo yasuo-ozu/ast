@@ -1,0 +1,9 @@
+error: `visit_bounded` takes its own type parameters, so `impl_chain!` cannot write it: nothing it generates can be `for<T>` generic. Its node's parameters are not its visitor's, which is what makes the method generic. Write that ancestor's `impl Visit` out by hand instead.
+  --> tests/ui/impl_chain_method_generic.rs:44:1
+   |
+44 | / ext::__visiting_chain::impl_chain! { ext; P;
+45 | |     fn visit_bounded(&mut self, i) { let _ = i; }
+46 | | }
+   | |_^
+   |
+   = note: this error originates in the macro `ext::__visiting_chain::__visiting_anc_check` which comes from the expansion of the macro `ext::__visiting_chain::impl_chain` (in Nightly builds, run with -Z macro-backtrace for more info)

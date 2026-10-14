@@ -1,7 +1,7 @@
 use crate::util::{
     angle, for_each_field_type, gargs, gparams, indicator, innermost_acc, item_generics,
-    item_ident, param_name, param_use, path_may_denote, peel, strip_bounds, to_snake, Container,
-    Head, LayerKind, Side,
+    item_ident, param_name, param_name_ident, param_use, path_may_denote, peel, strip_bounds,
+    to_snake, Container, Head, LayerKind, Side,
 };
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error3::abort;
@@ -410,69 +410,83 @@ fn generate_module(st: &BuildInput) -> TokenStream {
     let visited_macro = emit_visited_macro(st, &m.g_params, anc_export, &own, m.sized_self);
     let impl_chain = emit_impl_chain(&st.nonce, &m.ancestors);
 
-    // The `__visiting_base` relay: a module naming the direct base's traits, plus the base's own relay,
-    // so an extender reaches any ancestor as `<base>::__visiting_base::..` (see `base_relay`).
+    // The relay: one module per base, naming that base's traits plus the base's own relays, so an
+    // extender reaches any ancestor as `<base>::__visiting_base_<k>::..` (see `relay_path`). Indexed
+    // because a visitor may extend several bases, which makes the chain a tree of hops rather than a
+    // depth.
     //
-    // A module, not `pub use #b as __visiting_base`: re-exporting a *module* that is private is E0365,
-    // and a private base module is exactly the case this exists for. Re-exporting the public items
-    // out of it is allowed, so the relay forwards those instead.
+    // A module, not `pub use #b as __visiting_base_0`: re-exporting a *module* that is private is
+    // E0365, and a private base module is exactly the case this exists for. Re-exporting the public
+    // items out of it is allowed, so the relay forwards those instead.
     //
     // The aliases sit beside the relay rather than inside it because `#b` is written relative to
     // *this* module: a `super::`-relative path, or a 2018 uniform path through a local `use`, would
     // mean something else one level down.
-    let base_relay_export = m.base.as_ref().map(|b| {
-        let relay = Ident::new(BASE_RELAY, Span::call_site());
-        let id = |s: &str| Ident::new(s, Span::call_site());
-        let (v, vm, next) = (
-            id("__visiting_relay_Visit"),
-            id("__visiting_relay_VisitMut"),
-            id("__visiting_relay_next"),
-        );
-        // The base has a relay of its own exactly when it has an ancestor to reach through it.
-        let onward = (m.chain.len() > 1).then(|| {
+    let base_relay_exports: Vec<TokenStream> = st
+        .bases
+        .iter()
+        .enumerate()
+        .map(|(k, base)| {
+            let (b, hop) = (&base.path, base_relay_name(k));
+            let id = |s: &str| Ident::new(s, Span::call_site());
+            let (v, vm) = (
+                id(&format!("__visiting_relay_{k}_Visit")),
+                id(&format!("__visiting_relay_{k}_VisitMut")),
+            );
+            // This base's own hops, read back off the chain: an ancestor that came through base `k`
+            // carries `hop` first and that base's own hop name second. One `pub use` per distinct
+            // one, so the walk continues through it.
+            let mut seen = HashSet::new();
+            let onward_hops: Vec<Ident> = m
+                .chain
+                .iter()
+                .filter(|a| a.relay.len() >= 2 && a.relay[0] == hop)
+                .map(|a| a.relay[1].clone())
+                .filter(|h| seen.insert(h.to_string()))
+                .collect();
+            let onward_alias: Vec<Ident> = onward_hops
+                .iter()
+                .map(|h| id(&format!("__visiting_relay_{k}_next_{h}")))
+                .collect();
+            // The base's free `visit_*` functions travel with its traits: an override of one of its
+            // methods ends by calling the matching free fn to keep descending, and through a relay
+            // path that call has to resolve too. Their names are the base's own targets — `@own`.
+            let (fn_alias, fn_name): (Vec<Ident>, Vec<Ident>) = base
+                .own
+                .iter()
+                .flat_map(|d| Side::both().map(|side| side.method(&d.ident)))
+                .chain(
+                    base.own
+                        .iter()
+                        .map(|d| id(&format!("__visiting_ty_{}", d.ident))),
+                )
+                .map(|f| (id(&format!("__visiting_relay_{k}_fn_{f}")), f))
+                .unzip();
             quote! {
                 #[doc(hidden)]
-                pub use #b::#relay as #next;
-            }
-        });
-        let onward_in = onward
-            .is_some()
-            .then(|| quote!( pub use super::#next as #relay; ));
-        // The base's free `visit_*` functions travel with its traits: an override of one of its
-        // methods ends by calling the matching free fn to keep descending, and through a relay path
-        // that call has to resolve too. Their names are the base's own targets — `@own`.
-        let (fn_alias, fn_name): (Vec<Ident>, Vec<Ident>) = st
-            .base_own
-            .iter()
-            .flat_map(|d| Side::both().map(|side| side.method(&d.ident)))
-            .chain(
-                st.base_own
-                    .iter()
-                    .map(|d| id(&format!("__visiting_ty_{}", d.ident))),
-            )
-            .map(|f| (id(&format!("__visiting_relay_fn_{f}")), f))
-            .unzip();
-        quote! {
-            #[doc(hidden)]
-            pub use #b::{Visit as #v, VisitMut as #vm};
-            #(
-                #[doc(hidden)]
-                #[allow(unused_imports)]
-                pub use #b::#fn_name as #fn_alias;
-            )*
-            #onward
+                pub use #b::{Visit as #v, VisitMut as #vm};
+                #(
+                    #[doc(hidden)]
+                    #[allow(unused_imports)]
+                    pub use #b::#fn_name as #fn_alias;
+                )*
+                #(
+                    #[doc(hidden)]
+                    pub use #b::#onward_hops as #onward_alias;
+                )*
 
-            #[doc(hidden)]
-            pub mod #relay {
-                pub use super::{#v as Visit, #vm as VisitMut};
-                #( pub use super::#fn_alias as #fn_name; )*
-                #onward_in
+                #[doc(hidden)]
+                pub mod #hop {
+                    pub use super::{#v as Visit, #vm as VisitMut};
+                    #( pub use super::#fn_alias as #fn_name; )*
+                    #( pub use super::#onward_alias as #onward_hops; )*
+                }
             }
-        }
-    });
+        })
+        .collect();
 
     // One alias per target, taking exactly that type's own parameters. An extender spells an
-    // inherited type through the relay (`<module>::__visiting_base::__visiting_ty_Expr<S>`) rather than by
+    // inherited type through the relay (`<module>::__visiting_base_0::__visiting_ty_Expr<S>`) rather than by
     // its own path: the path is `crate::`-rooted by convention, and `crate` inside a `macro_rules`
     // body means the crate that *invokes* it.
     let ty_aliases: Vec<TokenStream> = vtypes
@@ -492,7 +506,7 @@ fn generate_module(st: &BuildInput) -> TokenStream {
     // Items are emitted directly into the enclosing module (where `define_visit!(...)` was invoked).
     quote! {
         #visited_macro
-        #base_relay_export
+        #(for e in &base_relay_exports) { #e }
         #impl_chain
         #(for a in &ty_aliases) { #a }
 

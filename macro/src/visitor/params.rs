@@ -114,6 +114,11 @@ pub(crate) struct Ancestor {
     /// See [`AncIn::declares`](super::build_input::AncIn::declares).
     pub(crate) declares: Vec<Decl>,
     pub(crate) path: TokenStream,
+    /// See [`AncIn::relay`](super::build_input::AncIn::relay).
+    pub(crate) relay: Vec<Ident>,
+    /// Indices, into the same `ancestors` list, of the visitors this one directly extends. Resolved
+    /// from [`AncIn::up`](super::build_input::AncIn::up), which is keyed by identity.
+    pub(crate) up: Vec<usize>,
     pub(crate) g_params: Vec<GenericParam>,
     pub(crate) g_use: TokenStream,
 }

@@ -10,8 +10,27 @@ pub(crate) struct DoneType {
 // `__visitor_build`: receives accumulated state + the just-resolved definition, fetches the next type
 // or generates the module.
 
+/// One visitor being extended, as its reply left it: the path this module names it by, the generic
+/// params its trait carries, the targets it declares, whether its methods demand `Self: Sized`, and
+/// its identity. Kept per base rather than merged — `base::Visit<..>` has to be spelled with *that*
+/// base's arity, and its free fns and type aliases relayed under its own hop.
+pub(crate) struct BaseIn {
+    pub(crate) path: Path,
+    pub(crate) generics: Vec<GenericParam>,
+    pub(crate) own: Vec<Decl>,
+    pub(crate) sized_self: bool,
+    pub(crate) id: TokenStream,
+    /// The identities of the visitors this base itself extends. See [`AncIn::up`].
+    pub(crate) up: Vec<TokenStream>,
+}
+
 pub(crate) struct BuildInput {
-    pub(crate) base: Option<Path>,
+    /// Every visitor this one extends, in the order written. Each becomes a supertrait.
+    pub(crate) bases: Vec<BaseIn>,
+    /// Bases whose metadata has not been asked for yet. The one being asked *now* travels as
+    /// `@bnow` and is consumed while parsing — a reply carries no name of its own, so it has to be
+    /// told which base it answers for — and so is not kept here.
+    pub(crate) base_fetch: Vec<Path>,
     pub(crate) build: Path,
     pub(crate) nonce: TokenStream,
     pub(crate) visited: Vec<Path>,
@@ -20,22 +39,10 @@ pub(crate) struct BuildInput {
     /// already knows. Requalified against the base path on arrival, so the paths stay resolvable
     /// through any number of generations.
     pub(crate) inherited: Vec<SubEntry>,
-    /// The base visitor's generic-param union (when inheriting), supplied by the base's
-    /// `__visiting_visited` macro, so the new trait can reference `base::Visit<..>` with the *base's*
-    /// arity instead of the new union's.
-    pub(crate) base_generics: Vec<GenericParam>,
-    /// The direct base's own transitive ancestors (for multi-level `base => mid => new`), so the new
-    /// visitor can emit the empty `Driver` impl for every transitive supertrait, not just the direct
-    /// base.
+    /// Everything the bases reach above themselves (for multi-level `base => mid => new`), so the
+    /// new visitor can emit the empty `Driver` impl for every transitive supertrait, not just the
+    /// direct ones. Deduplicated by identity, so a diamond yields one entry.
     pub(crate) base_ancestors: Vec<AncIn>,
-    /// The direct base's *own* targets, as opposed to what it inherited in turn — the `declares` set
-    /// for the first link of the chain, which `@anc` only carries for the links above it.
-    pub(crate) base_own: Vec<Decl>,
-    /// Whether the base's `visit_*` methods require `Self: Sized` — true in heterogeneous mode,
-    /// where a type's non-shared parameters become method generics. It travels because an extender
-    /// has to match it: its own forwarding impls must satisfy the base's as a supertrait, and a
-    /// `?Sized` visitor cannot.
-    pub(crate) base_sized_self: bool,
     /// Path of the type whose `@ast`/`@subast` trail in this bounce (so the fetched def is recorded
     /// under the path it was fetched by). Empty before any type is fetched.
     pub(crate) fetching: Option<Path>,
@@ -126,16 +133,29 @@ pub(crate) fn emit_decls(decls: &[Decl]) -> TokenStream {
 }
 
 pub(crate) struct AncIn {
+    /// The ancestor as *this* module can name it: the base it came through, then its relay hops.
     pub(crate) path: Path,
+    /// The hops themselves — `__visiting_base_<k>` segments, relative to the module that exports
+    /// them. A downstream extender prefixes its own hop to reach the same ancestor, and the chain
+    /// macros use them directly, since their bodies expand in the caller's crate.
+    pub(crate) relay: Vec<Ident>,
     pub(crate) names: Vec<Ident>,
     /// The types whose `visit_*` methods this ancestor *declares* — its own `define_visit!` targets, not
     /// what it in turn inherited. An override for one of them belongs in the impl of this
     /// ancestor's trait and nowhere else, so the closure driver needs to know where each inherited
     /// type's method lives.
     pub(crate) declares: Vec<Decl>,
+    /// The ancestor's own nonce. Two bases reach a shared ancestor by relay paths of their own, so
+    /// the paths cannot say they mean the same module; this can, and a diamond needs it to write one
+    /// impl rather than two conflicting ones.
+    pub(crate) id: TokenStream,
+    /// The identities of the visitors this ancestor itself extends. The chain is a graph once a
+    /// visitor may have several bases — a shared ancestor sits above two of them at once — and the
+    /// relay hops record only one way to reach it, so who-extends-whom is carried outright.
+    pub(crate) up: Vec<TokenStream>,
 }
 
-/// Parse `@anc { @a { @p {PATH} @n {name…} @d {decl…} } … }`.
+/// Parse `@anc { @a { @p {PATH} @r {hop…} @n {name…} @d {decl…} @i {id} @u {{id}…} } … }`.
 fn parse_ancestors(ts: TokenStream) -> Result<Vec<AncIn>> {
     let parser = |input: ParseStream| {
         let mut out = Vec::new();
@@ -148,14 +168,20 @@ fn parse_ancestors(ts: TokenStream) -> Result<Vec<AncIn>> {
             let content;
             braced!(content in input);
             let mut path = None;
+            let mut relay = Vec::new();
             let mut names = Vec::new();
             let mut declares = Vec::new();
+            let mut id = TokenStream::new();
+            let mut up = Vec::new();
             while !content.is_empty() {
                 let (name, inner) = parse_section(&content)?;
                 match name.to_string().as_str() {
                     "p" => path = Some(syn::parse2(inner)?),
+                    "r" => relay = parse_idents(inner)?,
                     "n" => names = parse_idents(inner)?,
                     "d" => declares = parse_decls(inner)?,
+                    "i" => id = inner,
+                    "u" => up = parse_ids(inner)?,
                     other => {
                         return Err(Error::new(
                             name.span(),
@@ -168,8 +194,11 @@ fn parse_ancestors(ts: TokenStream) -> Result<Vec<AncIn>> {
                 path.ok_or_else(|| Error::new(Span::call_site(), "missing @p in @a"))?;
             out.push(AncIn {
                 path,
+                relay,
                 names,
                 declares,
+                id,
+                up,
             });
         }
         Ok(out)
@@ -181,9 +210,15 @@ pub(crate) fn emit_ancestors(anc: &[AncIn]) -> TokenStream {
     let blocks: Vec<TokenStream> = anc
         .iter()
         .map(|a| {
-            let (path, names) = (&a.path, &a.names);
+            let (path, relay, names, id) = (&a.path, &a.relay, &a.names, &a.id);
             let declares = emit_decls(&a.declares);
-            quote! { @a { @p { #path } @n { #(#names)* } @d { #declares } } }
+            let up = emit_ids(&a.up);
+            quote! {
+                @a {
+                    @p { #path } @r { #(#relay)* } @n { #(#names)* } @d { #declares }
+                    @i { #id } @u { #up }
+                }
+            }
         })
         .collect();
     quote!( #(#blocks)* )
@@ -230,7 +265,8 @@ pub(crate) fn emit_visited_macro(
             (@visited $cb:path { $($pre:tt)* }) => {
                 $cb ! {
                     $($pre)* @inh { #(#all_visible),* } @bg { #(#g_params),* } @an { #anc_export }
-                    @own { #own } @sz { #(if sized_self) { yes } }
+                    @own { #own } @sz { #(if sized_self) { yes } } @id { #{&st.nonce} }
+                    @up { #{emit_ids(&st.bases.iter().map(|b| b.id.clone()).collect::<Vec<_>>())} }
                 }
             };
         }
@@ -292,7 +328,6 @@ pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> To
     // The re-exports live one module down, so `use path::to::visit::*;` brings in none of them.
     let chain_mod = Ident::new(CHAIN_MOD, Span::call_site());
     let check = Ident::new(&format!("__visiting_anc_{nonce}_check"), Span::call_site());
-    let relay = Ident::new(BASE_RELAY, Span::call_site());
     let per: Vec<Ident> = (0..ancestors.len())
         .map(|i| Ident::new(&format!("__visiting_anc_{nonce}_{i}"), Span::call_site()))
         .collect();
@@ -307,7 +342,7 @@ pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> To
     // Per declared type: the two method names and the alias the argument's type is named by. The
     // alias, not the type's own path, because the body is expanded in whatever crate invokes
     // `impl_chain!` and a `crate::`-rooted path would resolve there.
-    let decl_parts = |a: &Ancestor, hops: &[&Ident]| -> Vec<(Ident, Ident, TokenStream)> {
+    let decl_parts = |a: &Ancestor, hops: &[Ident]| -> Vec<(Ident, Ident, TokenStream)> {
         a.declares
             .iter()
             // A method-generic one is quantified per call, and a muncher arm cannot be: it would
@@ -331,8 +366,8 @@ pub(crate) fn emit_impl_chain(nonce: &TokenStream, ancestors: &[Ancestor]) -> To
         .map(|(i, (a, m))| {
             let (g_params, g_use) = (&a.g_params, &a.g_use);
             let me = &per_pub[i];
-            let hops = vec![&relay; i + 1];
-            let parts = decl_parts(a, &hops);
+            let hops = &a.relay;
+            let parts = decl_parts(a, hops);
             quote! {
                 #[macro_export]
                 #[doc(hidden)]
@@ -493,18 +528,15 @@ pub(crate) fn path_is_crate_local(p: &Path) -> bool {
     )
 }
 
-/// The host crate of a direct-base path: `Some(ident)` when it is rooted at an *external* crate
-/// (e.g. `other_crate::inherit::mid`), `None` for same-crate roots (`crate`/`super`/`self`) or a
-/// leading-`::` absolute path. Gates the ancestor requalification (`requalify_ancestor`): a transitive
+/// The host crate of a direct-base path: `Some(ident)` when it is rooted at an *external* crate —
+/// `other_crate::inherit::mid`, or `::other_crate::inherit::mid`, which names the same crate and is
+/// equally external — and `None` for a same-crate root (`crate`/`super`/`self`). Gates the ancestor requalification (`requalify_ancestor`): a transitive
 /// ancestor an *upstream* intermediate recorded relative to its own crate must be rewritten into a
 /// path the *downstream* extender can resolve. (A `$crate` cannot do this: emitted by a proc-macro
 /// into a generated `macro_rules` body it resolves only for fetch/macro-invocation paths, **not** for
 /// the trait path re-emitted into the new `Driver`'s supertrait impl — so a cross-crate `base => mid
 /// => new` with an *upstream* `mid` needs this concrete requalification instead.)
 pub(crate) fn base_host_crate(base: &Path) -> Option<Ident> {
-    if base.leading_colon.is_some() {
-        return None;
-    }
     let first = base.segments.first()?;
     if !matches!(first.arguments, PathArguments::None) {
         return None;
@@ -517,28 +549,35 @@ pub(crate) fn base_host_crate(base: &Path) -> Option<Ident> {
     }
 }
 
-/// The name each visitor module re-exports its direct base under, so an ancestor is reachable
+/// The prefix each visitor module re-exports one of its bases under, so an ancestor is reachable
 /// through the chain rather than by its own path. A base module that is private, or that a
-/// downstream crate cannot otherwise name, is still reachable as `<base>::__visiting_base`.
+/// downstream crate cannot otherwise name, is still reachable as `<base>::__visiting_base_0`.
+///
+/// Indexed, because a visitor may extend several: base `k` is relayed under
+/// `__visiting_base_<k>`, and an ancestor is a sequence of such hops rather than a depth.
 pub(crate) const BASE_RELAY: &str = "__visiting_base";
+
+/// The relay module name for base `k`.
+pub(crate) fn base_relay_name(k: usize) -> Ident {
+    Ident::new(&format!("{BASE_RELAY}_{k}"), Span::call_site())
+}
 
 /// The submodule each visitor module keeps its chain macros in. They are callable — the tests and
 /// any generated code reach them as `<module>::__visiting_chain::impl_chain!` — but a glob import of the
 /// visitor module takes this name alone, not what is inside it.
 pub(crate) const CHAIN_MOD: &str = "__visiting_chain";
 
-/// The path to the ancestor `depth` links above `base`, walked through the `__visiting_base` re-exports:
-/// `depth` 0 is `base` itself, 1 is its base, and so on.
+/// `base` followed by `hops`, the `__visiting_base_<k>` re-exports: no hops is `base` itself.
 ///
 /// This is what lets an ancestor chain cross a crate boundary without any path arithmetic: every
 /// link is named relative to the one below it, so no segment of it has to be nameable from the
 /// extending crate. (Contrast `requalify_ancestor`, which rewrites a recorded path and therefore
 /// needs every module on it to be public.)
-pub(crate) fn base_relay(base: &Path, depth: usize) -> Path {
+pub(crate) fn relay_path(base: &Path, hops: &[Ident]) -> Path {
     let mut p = base.clone();
-    for _ in 0..depth {
+    for h in hops {
         p.segments.push(PathSegment {
-            ident: Ident::new(BASE_RELAY, Span::call_site()),
+            ident: h.clone(),
             arguments: PathArguments::None,
         });
     }
@@ -651,15 +690,24 @@ fn parse_done_type(input: ParseStream) -> Result<DoneType> {
 
 impl Parse for BuildInput {
     fn parse(input: ParseStream) -> Result<Self> {
-        let mut base = None;
+        // `@bases`/`@inherited`/`@anc` are the carried, already-resolved state. `@inh`/`@bg`/`@an`/
+        // `@own`/`@sz`/`@id` are what the base just asked answers with, and are folded in after the
+        // loop, once `@bnow` says which base they belong to.
+        let mut bases: Vec<BaseIn> = Vec::new();
+        let mut base_fetch: Vec<Path> = Vec::new();
+        let mut base_now: Option<Path> = None;
+        let mut fresh_inh: Vec<SubEntry> = Vec::new();
+        let mut fresh_bg: Vec<GenericParam> = Vec::new();
+        let mut fresh_an: Vec<AncIn> = Vec::new();
+        let mut fresh_own: Vec<Decl> = Vec::new();
+        let mut fresh_sz = false;
+        let mut fresh_id = TokenStream::new();
+        let mut fresh_up: Vec<TokenStream> = Vec::new();
         let mut build = None;
         let mut nonce = TokenStream::new();
         let mut visited = Vec::new();
         let mut inherited = Vec::new();
-        let mut base_generics = Vec::new();
         let mut base_ancestors = Vec::new();
-        let mut base_own = Vec::new();
-        let mut base_sized_self = false;
         let mut fetching = None;
         let mut done = Vec::new();
         let mut rest = Vec::new();
@@ -669,10 +717,18 @@ impl Parse for BuildInput {
         while !input.is_empty() {
             let (name, content) = parse_section(input)?;
             match name.to_string().as_str() {
-                "base" => {
-                    if !content.is_empty() {
-                        base = Some(syn::parse2(content)?);
-                    }
+                "bases" => bases = parse_bases(content)?,
+                "bfetch" => {
+                    base_fetch = Punctuated::<Path, Token![,]>::parse_terminated
+                        .parse2(content)?
+                        .into_iter()
+                        .collect();
+                }
+                "bnow" => {
+                    base_now = Punctuated::<Path, Token![,]>::parse_terminated
+                        .parse2(content)?
+                        .into_iter()
+                        .next();
                 }
                 "build" => build = Some(syn::parse2(content)?),
                 "nonce" => nonce = content,
@@ -682,22 +738,22 @@ impl Parse for BuildInput {
                         .into_iter()
                         .collect();
                 }
-                // `@inherited` is the carried set; `@inh` is appended by a base's visited-list macro.
-                "inherited" | "inh" => inherited.extend(parse_subentries(content)?),
-                // `@baseg` is the carried base generics; `@bg` is appended by a base's macro.
-                "baseg" | "bg" => {
+                "inherited" => inherited.extend(parse_subentries(content)?),
+                "inh" => fresh_inh = parse_subentries(content)?,
+                "bg" => {
                     if !content.is_empty() {
-                        base_generics = Punctuated::<GenericParam, Token![,]>::parse_terminated
+                        fresh_bg = Punctuated::<GenericParam, Token![,]>::parse_terminated
                             .parse2(content)?
                             .into_iter()
                             .collect();
                     }
                 }
-                // `@anc` is the carried ancestor chain; `@an` is appended by a base's macro.
-                "anc" | "an" => base_ancestors = parse_ancestors(content)?,
-                "own" => base_own = parse_decls(content)?,
-                // `@sized` is the carried flag; `@sz` is appended by a base's macro.
-                "sized" | "sz" => base_sized_self = !content.is_empty(),
+                "anc" => base_ancestors = parse_ancestors(content)?,
+                "an" => fresh_an = parse_ancestors(content)?,
+                "own" => fresh_own = parse_decls(content)?,
+                "sz" => fresh_sz = !content.is_empty(),
+                "id" => fresh_id = content,
+                "up" => fresh_up = parse_ids(content)?,
                 "fetching" => {
                     if !content.is_empty() {
                         fetching = Some(syn::parse2(content)?);
@@ -714,16 +770,64 @@ impl Parse for BuildInput {
             }
         }
 
+        // Resolve the reply against the base that gave it, so the merged lists stand on their own
+        // and nothing downstream has to remember which base an entry came from. The inherited *type*
+        // paths are requalified; the ancestor *module* paths are reached through this base's hop, so
+        // no segment of them has to be nameable here. A module two bases both reach — a diamond — is
+        // kept once, told by identity rather than by path, since each base names it its own way.
+        if let Some(bn) = &base_now {
+            let hop = base_relay_name(bases.len());
+            let seen: HashSet<String> = inherited.iter().map(|e| norm_path(&e.path)).collect();
+            for e in fresh_inh {
+                let path = if needs_requalify(&e.path, bn) {
+                    requalify_ancestor(&e.path, bn)
+                } else {
+                    e.path.clone()
+                };
+                if !seen.contains(&norm_path(&path)) {
+                    inherited.push(SubEntry { path, key: e.key });
+                }
+            }
+            let mut known: HashSet<String> = base_ancestors
+                .iter()
+                .map(|a| a.id.to_string())
+                .chain(bases.iter().map(|b| b.id.to_string()))
+                .collect();
+            if known.insert(fresh_id.to_string()) {
+                bases.push(BaseIn {
+                    path: bn.clone(),
+                    generics: fresh_bg,
+                    own: fresh_own,
+                    sized_self: fresh_sz,
+                    id: fresh_id,
+                    up: fresh_up,
+                });
+                for a in fresh_an {
+                    if !known.insert(a.id.to_string()) {
+                        continue;
+                    }
+                    let mut relay = vec![hop.clone()];
+                    relay.extend(a.relay);
+                    base_ancestors.push(AncIn {
+                        path: relay_path(bn, &relay[1..]),
+                        relay,
+                        names: a.names,
+                        declares: a.declares,
+                        id: a.id,
+                        up: a.up,
+                    });
+                }
+            }
+        }
+
         Ok(BuildInput {
-            base,
+            bases,
+            base_fetch,
             build: build.ok_or_else(|| Error::new(Span::call_site(), "missing @build"))?,
             nonce,
             visited,
             inherited,
-            base_generics,
             base_ancestors,
-            base_own,
-            base_sized_self,
             fetching,
             done,
             rest,
@@ -731,6 +835,99 @@ impl Parse for BuildInput {
             just_subast,
         })
     }
+}
+
+/// `@bases { @b { @p {PATH} @g {params} @d {decls} @sz {yes?} @i {id} @u {{id}…} } … }` — the bases
+/// whose replies have already arrived.
+pub(crate) fn emit_bases(bases: &[BaseIn]) -> TokenStream {
+    let blocks: Vec<TokenStream> = bases
+        .iter()
+        .map(|b| {
+            let (path, generics, id) = (&b.path, &b.generics, &b.id);
+            let decls = emit_decls(&b.own);
+            let up = emit_ids(&b.up);
+            quote! {
+                @b {
+                    @p { #path } @g { #(#generics),* } @d { #decls }
+                    @sz { #(if b.sized_self) { yes } } @i { #id } @u { #up }
+                }
+            }
+        })
+        .collect();
+    quote!( #(#blocks)* )
+}
+
+fn parse_bases(ts: TokenStream) -> Result<Vec<BaseIn>> {
+    let parser = |input: ParseStream| {
+        let mut out = Vec::new();
+        while !input.is_empty() {
+            input.parse::<Token![@]>()?;
+            let kw: Ident = input.parse()?;
+            if kw != "b" {
+                return Err(Error::new(kw.span(), "expected `@b` in @bases"));
+            }
+            let content;
+            braced!(content in input);
+            let mut path = None;
+            let mut generics = Vec::new();
+            let mut own = Vec::new();
+            let mut sized_self = false;
+            let mut id = TokenStream::new();
+            let mut up = Vec::new();
+            while !content.is_empty() {
+                let (name, inner) = parse_section(&content)?;
+                match name.to_string().as_str() {
+                    "p" => path = Some(syn::parse2(inner)?),
+                    "g" => {
+                        if !inner.is_empty() {
+                            generics = Punctuated::<GenericParam, Token![,]>::parse_terminated
+                                .parse2(inner)?
+                                .into_iter()
+                                .collect();
+                        }
+                    }
+                    "d" => own = parse_decls(inner)?,
+                    "sz" => sized_self = !inner.is_empty(),
+                    "i" => id = inner,
+                    "u" => up = parse_ids(inner)?,
+                    other => {
+                        return Err(Error::new(
+                            name.span(),
+                            format!("unknown @b section @{other}"),
+                        ))
+                    }
+                }
+            }
+            out.push(BaseIn {
+                path: path.ok_or_else(|| Error::new(Span::call_site(), "missing @p in @b"))?,
+                generics,
+                own,
+                sized_self,
+                id,
+                up,
+            });
+        }
+        Ok(out)
+    };
+    parser.parse2(ts)
+}
+
+/// `{ {id} {id} … }` — a list of visitor identities, each braced so an id may be any token run.
+fn emit_ids(ids: &[TokenStream]) -> TokenStream {
+    quote!( #({ #ids })* )
+}
+
+fn parse_ids(ts: TokenStream) -> Result<Vec<TokenStream>> {
+    let parser = |input: ParseStream| {
+        let mut out = Vec::new();
+        while !input.is_empty() {
+            let inner;
+            braced!(inner in input);
+            out.push(inner.parse()?);
+        }
+        Ok(out)
+    };
+    parser.parse2(ts)
 }
 
 fn parse_idents(ts: TokenStream) -> Result<Vec<Ident>> {
@@ -745,39 +942,55 @@ fn parse_idents(ts: TokenStream) -> Result<Vec<Ident>> {
 }
 
 /// Serialize one `__visitor_build` ping-pong bounce's full state payload. Shared by `entry` (the
-/// first bounce — `inherited`/`base_generics`/`anc`/`done` are always empty, nothing fetched yet)
-/// and `build` (every later bounce, carrying the accumulated state). Content pieces that need
-/// their own rendering (`@base`, `@anc`, `@done`) are passed pre-rendered so this fn stays a pure
-/// section-list assembler.
+/// first bounce — `inherited`/`anc`/`done` are always empty, nothing fetched and no base asked yet)
+/// and `build` (every later bounce, carrying the accumulated state). Content pieces that need their
+/// own rendering (`@bases`, `@anc`, `@done`) are passed pre-rendered so this fn stays a pure
+/// section-list assembler. `@bnow` names the base whose reply will trail this payload, `@fetching`
+/// the type whose definition will — never both.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn state_tokens(
-    base: &TokenStream, // base_tokens(&base_path) or quote!()
+    bases: &TokenStream, // emit_bases(&bases)
+    bfetch: &[Path],
+    bnow: &TokenStream,
     build: &Path,
     nonce: &TokenStream,
     visited: &[Path],
     inherited: &[SubEntry],
-    base_generics: &[GenericParam],
     anc: &TokenStream, // emit_ancestors(&base_ancestors) or quote!()
-    own: &TokenStream,
-    sized_self: bool,
     fetching: &TokenStream,
     done: &TokenStream, // emit_done(&done) or quote!()
     rest: &[Path],
 ) -> TokenStream {
     quote! {
-        @base { #base }
+        @bases { #bases }
+        @bfetch { #(#bfetch),* }
+        @bnow { #bnow }
         @build { #build }
         @nonce { #nonce }
         @visited { #(#visited),* }
         @inherited { #(for e in inherited), { #{&e.path} as #{&e.key} } }
-        @baseg { #(#base_generics),* }
         @anc { #anc }
-        @own { #own }
-        @sized { #(if sized_self) { yes } }
         @fetching { #fetching }
         @done { #done }
         @rest { #(#rest),* }
     }
+}
+
+/// The accumulated state, ready for the next bounce.
+pub(crate) fn carry(st: &BuildInput, fetching: &TokenStream, bnow: &TokenStream) -> TokenStream {
+    state_tokens(
+        &emit_bases(&st.bases),
+        &st.base_fetch,
+        bnow,
+        &st.build,
+        &st.nonce,
+        &st.visited,
+        &st.inherited,
+        &emit_ancestors(&st.base_ancestors),
+        fetching,
+        &emit_done(&st.done),
+        &st.rest,
+    )
 }
 
 /// `__visitor_build` is an `announce` callback as well as the carrier of its own state.
@@ -865,39 +1078,19 @@ pub fn build(input: TokenStream) -> TokenStream {
     }
     st.fetching = None;
 
+    // Ask the next base for its metadata before any type is fetched, so the inherited set is
+    // complete by the time a field is lowered against it.
+    if !st.base_fetch.is_empty() {
+        let next = st.base_fetch.remove(0);
+        let state = carry(&st, &quote!(), &quote!(#next));
+        let build = &st.build;
+        return quote! { #next::__visiting_visited ! { @visited #build { #state } } };
+    }
+
     if !st.rest.is_empty() {
         let next = st.rest.remove(0);
-        let BuildInput {
-            base,
-            build,
-            nonce,
-            visited,
-            inherited,
-            base_generics,
-            base_ancestors,
-            base_own,
-            base_sized_self,
-            done,
-            rest,
-            ..
-        } = &st;
-        let base_ts = base_tokens(base);
-        let done_ts = emit_done(done);
-        let anc_ts = emit_ancestors(base_ancestors);
-        let state = state_tokens(
-            &base_ts,
-            build,
-            nonce,
-            visited,
-            inherited,
-            base_generics,
-            &anc_ts,
-            &emit_decls(base_own),
-            *base_sized_self,
-            &quote!(#next),
-            &done_ts,
-            rest,
-        );
+        let state = carry(&st, &quote!(#next), &quote!());
+        let build = &st.build;
         // announce's calling convention; our state rides in `REST`.
         return quote! { #next ! { [ #next !, #build ! ] @state #build { #state } } };
     }

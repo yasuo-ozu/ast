@@ -16,8 +16,7 @@ pub(crate) fn gen_side(
         g_args,
         g_def,
         g_use,
-        base,
-        base_g_use,
+        bases,
         ancestors,
         ..
     } = m;
@@ -43,6 +42,14 @@ pub(crate) fn gen_side(
     // Whether every `visit_*` carries `where Self: Sized`: this visitor's own heterogeneous mode, or
     // a base that is in one. Wider than `struct_only`, which is only about *this* visitor's closures.
     let sized_self = m.sized_self;
+    // One supertrait per base, each named with its own arity.
+    let base_bounds: Vec<TokenStream> = bases
+        .iter()
+        .map(|b| {
+            let (path, g_use) = (&b.path, &b.g_use);
+            quote!( #path::#{side.visit_trait()} #g_use )
+        })
+        .collect();
     let visit_tr = side.visit_trait();
     let into_vis_tr = side.ty("IntoVisitor");
     let into_hook_tr = side.ty("__VisitingIntoHook");
@@ -424,7 +431,10 @@ pub(crate) fn gen_side(
 
     let trait_def = quote! {
         #[doc = #trait_doc]
-        pub trait #visit_tr #g_def #(if let Some(b) = base) { : #b::#visit_tr #base_g_use } #uw {
+        pub trait #visit_tr #g_def
+            #(if !base_bounds.is_empty()) { : #(#base_bounds)+* }
+            #uw
+        {
             #(for s in &sides) {
                 // In heterogeneous (struct-only) mode the method carries this type's non-shared params
                 // as generics, and `where Self: Sized` (the method-generic dispatch needs a sized Self).
@@ -550,23 +560,55 @@ pub(crate) fn gen_side(
         /// The union predicates about this ancestor's own params, repeated on every item that names
         /// its trait or its types. See `anc_where`.
         uw: TokenStream,
+        /// The hooks of the ancestors immediately above this one — its own bases. Their traits are
+        /// this one's supertraits, the way their visitors' are.
+        up: Vec<usize>,
+        /// Whether this is one of *this* module's bases, rather than something they reach.
+        direct: bool,
         /// `(hook fn, hook struct, visit method, type, type as the hooks module names it)`
         methods: Vec<(Ident, Ident, Ident, TokenStream, TokenStream)>,
     }
-    let relay_seg = Ident::new(BASE_RELAY, Span::call_site());
+    // Who sits above whom: `up` is who-extends-whom one link at a time, so this is its transitive
+    // closure. With one base the chain is a line and `above(i, j)` is just `j > i`; with several it
+    // is a graph — a shared ancestor sits above two bases at once — and reachability is the thing
+    // that decides which supertrait obligations an item has to discharge.
+    let above = {
+        let mut reach: Vec<HashSet<usize>> = ancestors
+            .iter()
+            .map(|a| a.up.iter().copied().collect())
+            .collect();
+        // To a fixed point rather than in one ordered pass: a base listed beside a visitor that
+        // extends it lands *before* it in the chain, so an edge may point either way.
+        let mut grew = true;
+        while grew {
+            grew = false;
+            for i in 0..reach.len() {
+                let upper: Vec<usize> = reach[i]
+                    .iter()
+                    .flat_map(|&u| reach[u].iter().copied())
+                    .collect();
+                for u in upper {
+                    grew |= reach[i].insert(u);
+                }
+            }
+        }
+        move |lo: usize, hi: usize| -> bool { reach[lo].contains(&hi) }
+    };
     let anc_hooks: Vec<AncHook> = ancestors
         .iter()
         .enumerate()
         .map(|(i, a)| AncHook {
             tr: side.ty(&format!("AncHook{i}")),
             path_in_mod: {
-                let hops: Vec<&Ident> = vec![&relay_seg; i + 1];
+                let hops = &a.relay;
                 let (first, rest) = hops.split_first().expect("at least one hop");
                 quote!( #first #(:: #rest)* )
             },
             g_params: a.g_params.clone(),
             g_use: a.g_use.clone(),
             uw: where_clause(&anc_where(&a.g_params)),
+            up: a.up.clone(),
+            direct: a.relay.len() == 1,
             methods: a
                 .declares
                 .iter()
@@ -584,7 +626,7 @@ pub(crate) fn gen_side(
                     let args = &d.args;
                     let alias =
                         Ident::new(&format!("__visiting_ty_{}", d.ident), Span::call_site());
-                    let hops = vec![&relay_seg; i + 1];
+                    let hops = &a.relay;
                     (
                         side.func(&format!("hook_{}", to_snake(&d.ident))),
                         side.ty(&format!("__Visiting{}InhHook", d.ident)),
@@ -617,14 +659,16 @@ pub(crate) fn gen_side(
                 type #a_vis = Self;
                 fn #into_vis_fn(self) -> Self::#a_vis { self }
             }
-        // The traits chain the way the visitors do: an ancestor's `Visit` has the next one up as a
-        // supertrait, so proving `Driver<H>` visits at one level needs `H` to answer every level
-        // above it too. Each ancestor's parameters are a subset of the ones below, so the bound is
-        // always nameable.
-        #(for (i, h) in anc_hooks.iter().enumerate()) {
+        // The traits chain the way the visitors do: an ancestor's `Visit` has its own bases' as
+        // supertraits, so proving `Driver<H>` visits at one level needs `H` to answer every level
+        // above it too. An ancestor's parameters are a subset of its extender's, so each bound is
+        // nameable where it is written.
+        #(for h in &anc_hooks) {
             #[doc(hidden)]
             pub trait #{&h.tr}< #(for p in &h.g_params) { #p, } >
-                #(if let Some(up) = anc_hooks.get(i + 1)) { : #{&up.tr} #{&up.g_use} }
+                #(if !h.up.is_empty()) {
+                    : #(for u in &h.up)+ { #{&anc_hooks[*u].tr} #{&anc_hooks[*u].g_use} }
+                }
                 #{&h.uw}
             {
                 #(for (hook, _, _, _, ty) in &h.methods) {
@@ -633,7 +677,13 @@ pub(crate) fn gen_side(
             }
         }
         #[doc(hidden)]
-        pub trait #hook_tr #g_def #(if let Some(h0) = anc_hooks.first()) { : #{&h0.tr} #{&h0.g_use} } #uw {
+        // This module's own Hook answers for every base of its own; the rest follow through them.
+        pub trait #hook_tr #g_def
+            #(if anc_hooks.iter().any(|h| h.direct)) {
+                : #(for h in anc_hooks.iter().filter(|h| h.direct))+ { #{&h.tr} #{&h.g_use} }
+            }
+            #uw
+        {
             #(for s in &sides) {
                 fn #{&s.hook}(&mut self, i: #amp #{&s.ty_in_mod}) { let _ = i; }
             }
@@ -694,18 +744,21 @@ pub(crate) fn gen_side(
                 // this impl has to let the one that carries the closure be proven.
                 impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #ty ) >
                     #hook_tr #g_use for #hook_struct<#p_f> #uw {}
-                // A trait below this one reaches it through the supertrait chain, so its impl
-                // has to carry the bound as well; its parameters are a superset, so naming the
-                // closure's argument there is fine. One above never reaches back down, and its
-                // parameters may not even cover the argument, so it stays bare.
+                // A trait that reaches this one through the supertrait chain has to carry the
+                // bound as well, since proving it proves this one; its parameters are a superset,
+                // so naming the closure's argument there is fine. One this cannot reach back down
+                // to never needs it, and its parameters may not even cover the argument, so it
+                // stays bare.
                 #(for (oi, other) in anc_hooks.iter().enumerate()) {
-                    #(if oi < hi) {
-                        impl< #(for p in &other.g_params) { #p, } #p_f: ::core::ops::FnMut( #amp #ty ) >
-                            #{&other.tr} #{&other.g_use} for #hook_struct<#p_f> #{&other.uw} {}
-                    }
-                    #(if oi > hi) {
-                        impl< #(for p in &other.g_params) { #p, } #p_f >
-                            #{&other.tr} #{&other.g_use} for #hook_struct<#p_f> #{&other.uw} {}
+                    #(if oi != hi) {
+                        #(if above(oi, hi)) {
+                            impl< #(for p in &other.g_params) { #p, } #p_f: ::core::ops::FnMut( #amp #ty ) >
+                                #{&other.tr} #{&other.g_use} for #hook_struct<#p_f> #{&other.uw} {}
+                        }
+                        #(if !above(oi, hi)) {
+                            impl< #(for p in &other.g_params) { #p, } #p_f >
+                                #{&other.tr} #{&other.g_use} for #hook_struct<#p_f> #{&other.uw} {}
+                        }
                     }
                 }
                 impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #ty ) >

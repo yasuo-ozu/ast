@@ -1,4 +1,4 @@
-//! Reaching a visitor's ancestors: the `__visiting_base` relay, and `impl_chain!` for the empty
+//! Reaching a visitor's ancestors: the `__visiting_base_<k>` relay, and `impl_chain!` for the empty
 //! supertrait impls an extending visitor would otherwise spell out by hand.
 #![allow(dead_code)]
 
@@ -134,12 +134,12 @@ fn impl_chain_routes_a_method_to_its_ancestor() {
 struct ViaRelay {
     types: u32,
 }
-impl<S> top::__visiting_base::__visiting_base::Visit<S> for ViaRelay {
+impl<S> top::__visiting_base_0::__visiting_base_0::Visit<S> for ViaRelay {
     fn visit_type(&mut self, _i: &Type<S>) {
         self.types += 1;
     }
 }
-impl<S> top::__visiting_base::__visiting_base::VisitMut<S> for ViaRelay {}
+impl<S> top::__visiting_base_0::__visiting_base_0::VisitMut<S> for ViaRelay {}
 top::__visiting_chain::impl_chain! { top; ViaRelay; fn visit_type; }
 impl<S> top::Visit<S> for ViaRelay {}
 

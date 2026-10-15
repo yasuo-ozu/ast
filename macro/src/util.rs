@@ -32,6 +32,11 @@ pub(crate) fn param_name(p: &GenericParam) -> String {
     }
 }
 
+/// A generic parameter's name as an `Ident`.
+pub(crate) fn param_name_ident(p: &GenericParam) -> Ident {
+    Ident::new(&param_name(p), Span::call_site())
+}
+
 /// Use-side token for one generic param (ident / lifetime).
 pub(crate) fn param_use(p: &GenericParam) -> TokenStream {
     match p {

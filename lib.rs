@@ -416,7 +416,9 @@ pub use visiting_macro::visiting;
 ///   for its list, and those nodes reach the base's `visit_*` through the supertrait.
 /// * Chains can be as long as you like: `base => mid => new`.
 /// * The new visitor may take more generic parameters than its base.
-/// * Several bases at once work: `define_visit!(a, b => Stmt)`.
+/// * Several bases at once work: `define_visit!(a, b => Stmt)`. Each becomes a supertrait, so a
+///   visitor implements all of them, and each keeps its own generic arity. Bases that share an
+///   ancestor are fine: the shared trait is named once, so a diamond writes one impl, not two.
 ///
 /// A closure reaches an inherited type as readily as one of your own, so the short spelling keeps
 /// working however deep the chain is:

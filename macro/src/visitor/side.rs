@@ -26,6 +26,20 @@ pub(crate) fn gen_side(
     // `for<T>` generic, so the closure machinery (`&mut V` blanket / `Driver`/`Hook`/`Chain`/
     // `IntoVisitor`) is omitted and the inherent `.visit()` takes `&mut impl Visit` directly.
     let struct_only = m.method_mode;
+    // The union predicates one ancestor's items can state: those about parameters that ancestor has.
+    // The rest name parameters those items are not generic in at all, so stating them there is
+    // `E0425: cannot find type T` — and they are not this ancestor's to discharge anyway, since its
+    // trait never mentions them. Naming `base::Visit<S>` where the base keyed it on `S: Bound` asks
+    // for the bound here too.
+    let anc_where = |params: &[GenericParam]| -> Vec<WherePredicate> {
+        let names: HashSet<String> = params.iter().map(param_name).collect();
+        union_where
+            .iter()
+            // `map_or`, not `is_some_and`: that one is stable since 1.70 and this crate's MSRV is 1.61.
+            .filter(|p| where_pred_param(p).map_or(false, |id| names.contains(&id.to_string())))
+            .cloned()
+            .collect()
+    };
     let visit_tr = side.visit_trait();
     let into_vis_tr = side.ty("IntoVisitor");
     let into_hook_tr = side.ty("__VisitingIntoHook");
@@ -521,6 +535,9 @@ pub(crate) fn gen_side(
         path_in_mod: TokenStream,
         g_params: Vec<GenericParam>,
         g_use: TokenStream,
+        /// The union predicates about this ancestor's own params, repeated on every item that names
+        /// its trait or its types. See `anc_where`.
+        uw: TokenStream,
         /// `(hook fn, hook struct, visit method, type, type as the hooks module names it)`
         methods: Vec<(Ident, Ident, Ident, TokenStream, TokenStream)>,
     }
@@ -537,6 +554,7 @@ pub(crate) fn gen_side(
             },
             g_params: a.g_params.clone(),
             g_use: a.g_use.clone(),
+            uw: where_clause(&anc_where(&a.g_params)),
             methods: a
                 .declares
                 .iter()
@@ -592,6 +610,7 @@ pub(crate) fn gen_side(
             #[doc(hidden)]
             pub trait #{&h.tr}< #(for p in &h.g_params) { #p, } >
                 #(if let Some(up) = anc_hooks.get(i + 1)) { : #{&up.tr} #{&up.g_use} }
+                #{&h.uw}
             {
                 #(for (hook, _, _, _, ty) in &h.methods) {
                     fn #hook(&mut self, i: #amp #ty) { let _ = i; }
@@ -626,6 +645,7 @@ pub(crate) fn gen_side(
         #(for h in &anc_hooks) {
             impl< #(for p in &h.g_params) { #p, } #p_h: #{&h.tr} #{&h.g_use} >
                 #{&h.path_in_mod}::#visit_tr #{&h.g_use} for #driver<#p_h>
+                #{&h.uw}
             {
                 #(for (hook, _, method, _, ty) in &h.methods) {
                     fn #method(&mut self, i: #amp #ty) {
@@ -642,7 +662,7 @@ pub(crate) fn gen_side(
         #(for s in &sides) {
             #(for h in &anc_hooks) {
                 impl< #(for p in &h.g_params) { #p, } #p_f >
-                    #{&h.tr} #{&h.g_use} for #{&s.hook_struct}<#p_f> {}
+                    #{&h.tr} #{&h.g_use} for #{&s.hook_struct}<#p_f> #{&h.uw} {}
             }
         }
         #(for (hi, h) in anc_hooks.iter().enumerate()) {
@@ -651,6 +671,7 @@ pub(crate) fn gen_side(
                 pub struct #hook_struct<#p_f>(pub #p_f);
                 impl< #(for p in &h.g_params) { #p, } #p_f: ::core::ops::FnMut( #amp #ty ) >
                     #{&h.tr} #{&h.g_use} for #hook_struct<#p_f>
+                    #{&h.uw}
                 {
                     fn #hook(&mut self, i: #amp #ty) { (self.0)(i); }
                 }
@@ -665,11 +686,11 @@ pub(crate) fn gen_side(
                 #(for (oi, other) in anc_hooks.iter().enumerate()) {
                     #(if oi < hi) {
                         impl< #(for p in &other.g_params) { #p, } #p_f: ::core::ops::FnMut( #amp #ty ) >
-                            #{&other.tr} #{&other.g_use} for #hook_struct<#p_f> {}
+                            #{&other.tr} #{&other.g_use} for #hook_struct<#p_f> #{&other.uw} {}
                     }
                     #(if oi > hi) {
                         impl< #(for p in &other.g_params) { #p, } #p_f >
-                            #{&other.tr} #{&other.g_use} for #hook_struct<#p_f> {}
+                            #{&other.tr} #{&other.g_use} for #hook_struct<#p_f> #{&other.uw} {}
                     }
                 }
                 impl< #(#g_params,)* #p_f: ::core::ops::FnMut( #amp #ty ) >
@@ -724,6 +745,7 @@ pub(crate) fn gen_side(
         #(for h in &anc_hooks) {
             impl< #(for p in &h.g_params) { #p, } #p_a: #{&h.tr} #{&h.g_use}, #p_b: #{&h.tr} #{&h.g_use} >
                 #{&h.tr} #{&h.g_use} for ( #p_a, #p_b )
+                #{&h.uw}
             {
                 #(for (hook, _, _, _, ty) in &h.methods) {
                     fn #hook(&mut self, i: #amp #ty) {

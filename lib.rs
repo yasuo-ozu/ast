@@ -429,6 +429,14 @@ pub use visiting_macro::visiting;
 /// method lives in the base. Mark that field in the base's own `define_visit!` instead, or drop the
 /// marker and let the walk take the elements one at a time.
 ///
+/// Another: a node's `where` clause rides into its visitor's trait, so `base::Visit<S>` can require
+/// `S: Bound`, and every item an extender writes that names that trait has to state the bound too.
+/// It is read off the extending visitor's *own* nodes, which is where it usually is — a node holding
+/// a bounded node is bounded itself. If it is not — the extender's nodes do not carry that parameter
+/// at all, and it reaches the extender only through the base's parameter list — nothing states it
+/// and the generated module does not compile. Repeat the bound on one of the extender's own nodes,
+/// or give that visitor its own `define_visit!` rather than extending.
+///
 /// You have to implement **every** trait in the chain, even the ancestors whose nodes you never
 /// touch. Those impls are empty, since every method already walks on its own:
 ///

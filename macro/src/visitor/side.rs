@@ -40,6 +40,9 @@ pub(crate) fn gen_side(
             .cloned()
             .collect()
     };
+    // Whether every `visit_*` carries `where Self: Sized`: this visitor's own heterogeneous mode, or
+    // a base that is in one. Wider than `struct_only`, which is only about *this* visitor's closures.
+    let sized_self = m.sized_self;
     let visit_tr = side.visit_trait();
     let into_vis_tr = side.ty("IntoVisitor");
     let into_hook_tr = side.ty("__VisitingIntoHook");
@@ -263,8 +266,10 @@ pub(crate) fn gen_side(
                 .filter(|p| where_pred_param(p).map_or(false, |id| mp_names.contains(&id.to_string())))
                 .cloned()
                 .collect();
-            // Trait method: `where Self: Sized` (struct-only) + the method-param bounds.
-            let trait_where_preds: Vec<WherePredicate> = if struct_only {
+            // Trait method: `where Self: Sized` (whenever the chain demands it) + the method-param
+            // bounds. An extender of a heterogeneous base needs it too: its own default body calls a
+            // free fn that is now sized, and the supertrait's methods are sized regardless.
+            let trait_where_preds: Vec<WherePredicate> = if sized_self {
                 let mut preds: Vec<WherePredicate> = vec![parse_quote!(Self: ::core::marker::Sized)];
                 preds.extend(method_where.iter().cloned());
                 preds
@@ -446,21 +451,26 @@ pub(crate) fn gen_side(
     // method forwards to the same place. One shape, three headers: `&mut V` and `Box<V>` forward to
     // their single delegate, a tuple to each element in turn, and the container-edit views ride along
     // with the per-node methods.
+    // Emitted in heterogeneous mode too. Only the *closure* machinery is impossible there (a closure
+    // cannot be `for<T>` generic); forwarding is not — the per-method generics and the method's own
+    // `where` ride along, and every wrapper is `Sized`, which is all `where Self: Sized` asks. Without
+    // these a visitor in that mode cannot be passed by `&mut` or boxed, and — because the forwarding
+    // impls of an extending visitor need the base's — cannot be extended at all.
     let forwarding_impl = |header: TokenStream, delegates: Vec<(TokenStream, TokenStream)>| {
         quote! {
-            #(if !struct_only) {
-                #header #uw {
-                    #(for s in &sides) {
-                        fn #{&s.method}(&mut self, i: #amp #{&s.ty}) {
-                            #(for (v, recv) in &delegates) {
-                                <#v as #visit_tr #g_use>::#{&s.method}(#recv, i);
-                            }
+            #header #uw {
+                #(for s in &sides) {
+                    fn #{&s.method}< #(for mp in &s.method_params) { #mp, } >(&mut self, i: #amp #{&s.ty})
+                        #{&s.trait_where}
+                    {
+                        #(for (v, recv) in &delegates) {
+                            <#v as #visit_tr #g_use>::#{&s.method}(#recv, i);
                         }
-                        #(for spec in &s.views) {
-                            fn #{&spec.method}< #{&spec.lt_decl} #{&spec.view_param}: #{&spec.bound} >(&mut self, v: #{&spec.amp} #{&spec.view_param}) #{&spec.where_clause} {
-                                #(for (d, recv) in &delegates) {
-                                    <#d as #visit_tr #g_use>::#{&spec.method}(#recv, v);
-                                }
+                    }
+                    #(for spec in &s.views) {
+                        fn #{&spec.method}< #{&spec.lt_decl} #(for mp in &s.method_params) { #mp, } #{&spec.view_param}: #{&spec.bound} >(&mut self, v: #{&spec.amp} #{&spec.view_param}) #{&spec.where_clause} {
+                            #(for (d, recv) in &delegates) {
+                                <#d as #visit_tr #g_use>::#{&spec.method}(#recv, v);
                             }
                         }
                     }
@@ -479,7 +489,9 @@ pub(crate) fn gen_side(
     // specifically rather than blanketed over a wrapper trait, which a consumer could then implement
     // for a type this crate also covers.
     let boxed_visitor_impl = forwarding_impl(
-        quote!( impl< #(#g_params,)* #p_v: #visit_tr #g_use + ?Sized > #visit_tr #g_use for ::std::boxed::Box<#p_v> ),
+        // `?Sized` only where the methods allow it: in heterogeneous mode each carries
+        // `where Self: Sized`, so forwarding to the inner visitor needs it sized.
+        quote!( impl< #(#g_params,)* #p_v: #visit_tr #g_use #(if !sized_self) { + ?Sized } > #visit_tr #g_use for ::std::boxed::Box<#p_v> ),
         vec![(quote!(#p_v), quote!(&mut **self))],
     );
 
@@ -495,7 +507,7 @@ pub(crate) fn gen_side(
         .iter()
         .map(|s| {
             quote! {
-                impl< #(for gp in &s.free_params) { #gp, } #p_v: #visit_tr #g_use #(if !struct_only) { + ?Sized } >
+                impl< #(for gp in &s.free_params) { #gp, } #p_v: #visit_tr #g_use #(if !sized_self) { + ?Sized } >
                     __visiting_rt::walk::#walk_tr< #tag #tag_args, __visiting_rt::walk::Here, #p_v >
                     for #{&s.ty} #{&s.free_where}
                 {
@@ -513,7 +525,7 @@ pub(crate) fn gen_side(
             // `visit_*` (which requires `Self: Sized`). `free_params` = trait params ∪ this type's
             // non-shared params, lifetimes-first.
             #[doc = #{&s.fdoc}]
-            pub fn #{&s.method}< #(for gp in &s.free_params) { #gp, } #p_v: #visit_tr #g_use #(if !struct_only) { + ?Sized } >(
+            pub fn #{&s.method}< #(for gp in &s.free_params) { #gp, } #p_v: #visit_tr #g_use #(if !sized_self) { + ?Sized } >(
                 this: &mut #p_v,
                 i: #amp #{&s.ty},
             ) #{&s.free_where} {
@@ -558,6 +570,9 @@ pub(crate) fn gen_side(
             methods: a
                 .declares
                 .iter()
+                // A method-generic one has no hook: a closure cannot be `for<T>` generic, and the
+                // ancestor's `Visit` default walks it anyway.
+                .filter(|d| !d.method_generic)
                 .map(|d| {
                     let path = m
                         .reachable

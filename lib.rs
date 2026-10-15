@@ -437,6 +437,14 @@ pub use visiting_macro::visiting;
 /// and the generated module does not compile. Repeat the bound on one of the extender's own nodes,
 /// or give that visitor its own `define_visit!` rather than extending.
 ///
+/// A base can also be *heterogeneous*: when one of its nodes carries a parameter the others do not
+/// and that parameter is bounded or concretely filled, its trait is keyed on the shared subset and
+/// the rest become per-method generics — `fn visit_bounded<S: Bound>(&mut self, i: &Bounded<S>)`.
+/// Such a base can be extended to any depth, passed by `&mut` and boxed like any other; what it
+/// cannot do is take a closure for one of those per-method-generic nodes, since a closure cannot be
+/// `for<T>` generic. Override that node by writing the base's impl out, and `.visit(..)` with a
+/// struct.
+///
 /// You have to implement **every** trait in the chain, even the ancestors whose nodes you never
 /// touch. Those impls are empty, since every method already walks on its own:
 ///

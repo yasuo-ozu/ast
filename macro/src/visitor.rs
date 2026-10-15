@@ -191,7 +191,7 @@ fn intermediate_impls(
                 let body = lowers[side.index()].destructure(node, &quote!(self), 0, &mut stack);
                 let (tr, f, recv) = (side.walk_trait(), side.walk_fn(), side.recv());
                 quote! {
-                    impl< #(#params,)* __VisitingW: #{side.visit_trait()} #g_use + ?Sized >
+                    impl< #(#params,)* __VisitingW: #{side.visit_trait()} #g_use #(if !m.sized_self) { + ?Sized } >
                         __visiting_rt::walk::#tr< #tag #targs, __visiting_rt::walk::Here, __VisitingW >
                         for #path #own_use #where_cl
                     {
@@ -232,7 +232,7 @@ fn inherited_impls(
                 );
                 let m_name = side.method(id);
                 quote! {
-                    impl< #(#g_params,)* __VisitingW: #vt #g_use + ?Sized >
+                    impl< #(#g_params,)* __VisitingW: #vt #g_use #(if !m.sized_self) { + ?Sized } >
                         __visiting_rt::walk::#tr< #tag #targs, __visiting_rt::walk::Here, __VisitingW > for #ty #uw
                     {
                         fn #f(#recv, v: &mut __VisitingW) {
@@ -389,12 +389,25 @@ fn generate_module(st: &BuildInput) -> TokenStream {
     let anc_export = emit_ancestors(&m.chain);
     let own: Vec<Decl> = vtypes
         .iter()
-        .map(|t| Decl {
-            ident: t.ident.clone(),
-            args: t.own_use.clone(),
+        .map(|t| {
+            // A method-generic target is exported by name only. Its `visit_*` is quantified per call,
+            // so neither a closure hook nor an `impl_chain!` arm can write it — the same reason this
+            // mode has no closure machinery of its own — and its arguments name parameters the
+            // extender does not have. An extender still inherits the method through the supertrait
+            // and overrides it by writing the impl out.
+            let method_generic = !t.method_params.is_empty();
+            Decl {
+                ident: t.ident.clone(),
+                args: if method_generic {
+                    TokenStream::new()
+                } else {
+                    t.own_use.clone()
+                },
+                method_generic,
+            }
         })
         .collect();
-    let visited_macro = emit_visited_macro(st, &m.g_params, anc_export, &own);
+    let visited_macro = emit_visited_macro(st, &m.g_params, anc_export, &own, m.sized_self);
     let impl_chain = emit_impl_chain(&st.nonce, &m.ancestors);
 
     // The `__visiting_base` relay: a module naming the direct base's traits, plus the base's own relay,

@@ -29,12 +29,10 @@ fn diagnostics() {
     t.compile_fail("tests/ui/glob_import_hides_chain.rs");
     // The same type listed twice — one clean error, not an `E0428` cascade on generated names.
     t.compile_fail("tests/ui/visited_listed_twice.rs");
-    // A `#[visiting]` entry that is not itself a node — caught at the derive, by the field's type.
+    // A `#[visiting]` entry that is not itself announced — caught at the check, by the field's type.
     t.compile_fail("tests/ui/subast_entry_not_a_node.rs");
-    // `#[derive(Visiting)]` on a union.
-    t.compile_fail("tests/ui/derive_visiting_on_a_union.rs");
-    // A derived node's relative paths, all reported at once.
-    t.compile_fail("tests/ui/derive_relative_path.rs");
+    // The check on a union.
+    t.compile_fail("tests/ui/visiting_check_on_a_union.rs");
     // `impl_chain!` given a method no ancestor declares.
     t.compile_fail("tests/ui/impl_chain_unknown_method.rs");
     // Marker on a non-viewable / container-less / non-visited field → clean abort, not a cryptic trait error.
@@ -44,12 +42,11 @@ fn diagnostics() {
     // A `#[seq]`/`#[opt]` field whose top-level type wraps a container (`Box<Vec<T>>`) is not an edit
     // target — edit views need a bare single container (the field still descends).
     t.compile_fail("tests/ui/edit_marker_boxed.rs");
-    // The `visiting(..)` check: it marks a node, so only a struct or an enum may carry it; its
-    // follow-list obeys the attribute's rooted-path rule; it does not go with the derive; and the
-    // attributes it owns have one place each.
+    // The `visiting(..)` check: it declares a node, so only a struct or an enum may carry it; its
+    // follow-list obeys the attribute's rooted-path rule; and the attributes it owns have one place
+    // each.
     t.compile_fail("tests/ui/visiting_check_on_a_trait.rs");
     t.compile_fail("tests/ui/visiting_check_unrooted_path.rs");
-    t.compile_fail("tests/ui/visiting_check_and_attribute.rs");
     t.compile_fail("tests/ui/visiting_check_entry_not_a_node.rs");
     t.compile_fail("tests/ui/visiting_check_misplaced_attrs.rs");
     // Handing a visited type to a generic parameter the node holds but never follows (`Brackets<T, S>`

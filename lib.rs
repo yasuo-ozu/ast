@@ -7,27 +7,21 @@
 //!
 //! # What lives here
 //!
-//! `#[derive(Visiting)]` and `define_visit!` write their code into *your* crate. This crate holds the pieces
-//! that code calls into. You rarely name them yourself:
+//! `#[announce(visiting::visiting)]` and `define_visit!` write their code into *your* crate. This
+//! crate holds the pieces that code calls into. You rarely name them yourself:
 //!
-//! * [`Visiting`] — a marker trait, with no methods. `#[derive(Visiting)]` implements it, and that is how
-//!   generic code says "is an AST node".
 //! * [`SeqView`]/[`SeqEdit`] and [`OptView`]/[`OptEdit`] — the slot views a `#[seq]`/`#[opt]`
 //!   method is handed, plus [`Elements`] for iterating one. You *do* name these, in an override.
 //! * [`walk::Walk`]/[`walk::WalkMut`] — how a node offers its children to the visitor. Implement
 //!   one of these to make a container of your own walkable.
-//! * [`Repeater`] — plumbing. It lets the generated code name a field's type from a different
-//!   module or crate than the one the node was defined in.
 //!
-//! # Nodes you did not write
+//! # Nodes are announced
 //!
-//! A node has to be declared where it is defined, which is a problem for a type in a crate that has
-//! never heard of this one. [`announce`] already solves half of it — it publishes a definition's
-//! tokens for any crate to read — and the derive announces each node through it, so a walk fetches
-//! a derived and an announced definition the same way. The other half is the declaration — the [`Visiting`]
-//! marker, which only the defining crate may implement, and the attributes a node is written with,
-//! which rustc rejects where no derive declares them. [`visiting`](macro@crate::visiting) is that
-//! half: a check handed to `#[announce]`, expanded beside the definition, owning the attributes.
+//! A visitor is built from the definitions of its nodes, wherever they live — another module, or a
+//! crate that has never heard of this one. [`announce`] publishes a definition's tokens for any
+//! crate to read, so a node is an announced type, and [`visiting`](macro@crate::visiting) is the
+//! check handed to its `#[announce]`: expanded beside the definition, owning the attributes a node
+//! is written with.
 //!
 //! [`announce`]: https://docs.rs/announce
 
@@ -46,107 +40,17 @@ pub mod _imp {
 pub mod visit {
     // Named one by one rather than re-exported with a glob: a glob would also carry `visit` itself
     // (making `visiting::visit::visit::visit::…` a valid path) and `_imp`. This is the whole surface the
-    // generated code reaches — `#root::visit::{Visiting, Repeater}` from the derive, `__visiting_rt::{..}`
-    // from `define_visit!`.
-    pub use super::{
-        define_visit, walk, Elements, OptEdit, OptView, Repeater, SeqEdit, SeqView, Visiting,
-    };
-    // The derive announces each node through `announce`; its generated code names the crate here.
+    // generated code reaches — `#root::visit::__announce` from the check, `__visiting_rt::{..}` from
+    // `define_visit!`.
+    pub use super::{define_visit, walk, Elements, OptEdit, OptView, SeqEdit, SeqView};
+    // The check asserts that every follow entry is announced, and names announce here.
     pub use announce as __announce;
 }
 
-/// Marks a type as an AST node and emits the metadata [`define_visit!`] reads.
+/// Declare a node: a check handed to [`announce`]'s `#[announce]`.
 ///
-/// # Every path is absolute
-///
-/// A node's definition is read again where a visitor is built — another module, or another crate —
-/// so every path in it must resolve from anywhere: `crate::..`, `::std::..`, `::core::..` or
-/// `::other_crate::..`. That covers field types, bounds, array lengths and discriminants. Std's
-/// prelude names are relative too, so `Box<Expr>` is written `::std::boxed::Box<crate::Expr>`.
-/// Primitives, `Self`, the type's own parameters and their associated types (`T::Out`) need nothing.
-/// The derive reports every path that breaks the rule, with the absolute form of a std name.
-///
-/// # Types are matched by their last path segment
-///
-/// **This is the main rule to remember.** A field's type is known by the last part of its path.
-/// Nothing else is read. So `crate::other::Node` and `crate::visiting::Node` mean the same `Node`
-/// here. This derive sees one type at a time. It cannot look a path up.
-///
-/// If two types share a name, give one an alias and write the alias in the field, through the
-/// module that imports it:
-///
-/// ```ignore
-/// use crate::other::Node as OtherNode;
-///
-/// #[derive(Visiting)]
-/// #[visiting(crate::other::Node as OtherNode)]
-/// pub struct Wrapper {
-///     inner: crate::OtherNode,
-/// }
-/// ```
-///
-/// # Attributes
-///
-/// | attribute | on | meaning |
-/// |---|---|---|
-/// | `#[visiting(path, ..)]` | the type | types this node reaches that `define_visit!(..)` does **not** list, so the walk can pass through them. A listed type needs no entry. |
-/// | `#[seq]` / `#[opt]` | a field | reach the parent slot through a [`SeqView`] or [`OptView`]. Plain `Vec<T>` / `Option<T>` only. |
-/// | `#[skip]` | a field | never walk into this field, whatever its type. An error together with `#[seq]` or `#[opt]`. |
-///
-/// Take a field's type and remove wrappers like `Box`, `Vec` and `Option`. What is left is the
-/// **head**. The walk goes into a field when the visitor knows its head. It knows a type if you
-/// listed it in `define_visit!(..)`, or if it comes from a base visitor. Those need no `#[visiting(..)]`
-/// entry. That list is only for types the walk passes *through* on the way to a known one.
-///
-/// A `#[visiting(..)]` path must start at a crate too: `crate::path::to::Type`, or
-/// `other_crate::path::Type` for a type in another crate. A plain name, or a `self::`/`super::`
-/// path, is an error. Here is why. This derive puts the path inside a macro. That macro runs later,
-/// in the module where the visitor lives. A short path would mean something else there.
-/// `define_visit!(..)` has no such rule.
-///
-/// A `#[seq]` or `#[opt]` field must be a plain `Vec<T>` or `Option<T>`. A wrapped one, like
-/// `Option<Box<T>>`, cannot be edited in place. The macro tells you so, instead of building a view
-/// that would not work.
-///
-/// `#[skip]` takes a field out of the walk, whatever its type:
-///
-/// ```ignore
-/// #[derive(Visiting)]
-/// pub enum Expr<S> {
-///     // A `&mut` walk cannot descend into this field: `&mut Box<Stmt<'static, S>>` is
-///     // invariant in the lifetime, so there is no way in. Saying so here gives a clear error
-///     // instead of one from inside the macro.
-///     Stmt(#[skip] ::std::boxed::Box<crate::Stmt<'static, S>>),
-///     Lit(::core::marker::PhantomData<S>),
-/// }
-/// ```
-///
-/// # Announced
-///
-/// The derive announces the node with [`announce`](https://docs.rs/announce): the trampoline under
-/// the type's name is announce's, and the type implements `announce::Announce`. A node needs no
-/// dependency on announce for that. The payload is the definition as written, which is why its paths
-/// are absolute: any announce consumer can read it.
-///
-/// A type that is also announced for another reader — `#[announce]`, `#[derive(Announce)]` — keeps
-/// one trampoline: the derive leaves it to that announcement, whose payload carries the follow-list
-/// and the field markers. Write `#[announce]` above the derive. A `#[derive(Announce)]` has to be an attribute of its own
-/// below the derive and not next to it: the derive cannot see one in its own `#[derive(..)]` list,
-/// and rustfmt merges adjacent derives into one. A `macro_name` renames the only trampoline, which
-/// `define_visit!` then does not find.
-pub use visiting_macro::Visiting;
-
-/// Declare a node from an [`announce`] definition, with no derive of ours.
-///
-/// `announce` solves the first half of the same problem this crate does: it puts a definition's
-/// tokens in a `macro_rules!` beside the item so another crate can read them. A type carrying
-/// `#[announce]` is therefore already walkable in shape — but being a *node* also means carrying the
-/// [`Visiting`] marker, and that impl can only be written in the crate that owns the type. So an
-/// announced type had to be marked by hand, and a type from a crate that merely announces could not
-/// be marked at all.
-///
-/// Pass this macro to `#[announce]` as a check. Nothing below derives anything of ours; the nodes,
-/// the follow-list and the field markers are all declared through `#[announce]`:
+/// A visitor is built from its nodes' definitions, which `announce` publishes for any crate to read.
+/// This check is invoked beside the definition, and owns the attributes a node is written with:
 ///
 /// ```
 /// #[announce::announce(visiting::visiting)]
@@ -178,32 +82,85 @@ pub use visiting_macro::Visiting;
 /// }
 /// ```
 ///
-/// announce invokes the check beside the definition — where the marker impl is legal — and
-/// `define_visit!` builds the visitor from the definitions its trampolines carry. Field types are
-/// written `crate::Leaf` rather than `Leaf` because announce re-uses the payload in another crate:
-/// that is its own rule, and it applies to any announced item.
+/// A node's crate depends on `announce`, of the version this crate uses.
 ///
-/// # The attributes are the same ones
+/// # Every path is absolute
 ///
-/// `#[visiting(..)]`, `#[seq]`, `#[opt]` and `#[skip]` are not attributes rustc knows; a derive is
-/// what normally declares them, and there is no derive here. The check *owns* the four names
-/// instead: `#[announce]` asks it which names it owns, removes them from the item it emits, and
-/// keeps them in the payload a visitor reads. So a node declares itself exactly as a deriving one
-/// does, and the rules are the same ones — see [`Visiting`].
+/// The definition is read again where a visitor is built, so every path in it must resolve from
+/// anywhere: `crate::..`, `::std::..`, `::core::..` or `::other_crate::..`. That covers field types,
+/// bounds, array lengths and discriminants. Std's prelude names are relative too, so `Box<Expr>` is
+/// written `::std::boxed::Box<crate::Expr>`. Primitives, `Self`, the type's own parameters and their
+/// associated types (`T::Out`) need nothing. That is announce's rule, for any announced item.
 ///
+/// # Types are matched by their last path segment
+///
+/// **This is the main rule to remember.** A field's type is known by the last part of its path.
+/// Nothing else is read. So `crate::other::Node` and `crate::visiting::Node` mean the same `Node`
+/// here. A node is checked one type at a time. Its paths are not looked up.
+///
+/// If two types share a name, give one an alias and write the alias in the field, through the
+/// module that imports it:
+///
+/// ```ignore
+/// use crate::other::Node as OtherNode;
+///
+/// #[announce::announce(visiting::visiting)]
+/// #[visiting(crate::other::Node as OtherNode)]
+/// pub struct Wrapper {
+///     inner: crate::OtherNode,
+/// }
+/// ```
+///
+/// # Attributes
+///
+/// | attribute | on | meaning |
+/// |---|---|---|
+/// | `#[visiting(path, ..)]` | the type | types this node reaches that `define_visit!(..)` does **not** list, so the walk can pass through them. A listed type needs no entry. |
+/// | `#[seq]` / `#[opt]` | a field | reach the parent slot through a [`SeqView`] or [`OptView`]. Plain `Vec<T>` / `Option<T>` only. |
+/// | `#[skip]` | a field | never walk into this field, whatever its type. An error together with `#[seq]` or `#[opt]`. |
+///
+/// rustc knows none of them, so the check *owns* the four names: `#[announce]` asks it which names it
+/// owns, removes them from the item it emits, and keeps them in the payload a visitor reads.
 /// `#[announce]` has to sit **above** them, since rustc resolves attributes from the top.
+///
+/// Take a field's type and remove wrappers like `Box`, `Vec` and `Option`. What is left is the
+/// **head**. The walk goes into a field when the visitor knows its head. It knows a type if you
+/// listed it in `define_visit!(..)`, or if it comes from a base visitor. Those need no `#[visiting(..)]`
+/// entry. That list is only for types the walk passes *through* on the way to a known one, and each
+/// of them must be announced too.
+///
+/// A `#[visiting(..)]` path must start at a crate: `crate::path::to::Type`, or
+/// `other_crate::path::Type` for a type in another crate. A plain name, or a `self::`/`super::`
+/// path, is an error. The path is used again in the module where the visitor lives, where a short
+/// path would mean something else. `define_visit!(..)` has no such rule.
 ///
 /// The follow-list may also be written in the check's own arguments,
 /// `visiting::visiting(crate::Leaf)`, which is where it ends up in the trampoline's metadata. Use
 /// whichever reads better; a node may use both, and `crate = <facade>` goes in either.
 ///
-/// # Two things it does not do
+/// A `#[seq]` or `#[opt]` field must be a plain `Vec<T>` or `Option<T>`. A wrapped one, like
+/// `Option<Box<T>>`, cannot be edited in place. The macro tells you so, instead of building a view
+/// that would not work.
 ///
-/// * It does not emit the `Repeater` table the derive writes for a field type that only resolves in
-///   the defining crate. That is announce's own `repeater = ..`, and the two would collide.
-/// * It does not go together with `#[derive(Visiting)]` on one type. The derive would never see its
-///   attributes, because the check owns them and announce strips them first. Both sides implement
-///   the marker, so rustc reports the conflict (E0119) rather than letting it pass.
+/// `#[skip]` takes a field out of the walk, whatever its type:
+///
+/// ```ignore
+/// #[announce::announce(visiting::visiting)]
+/// pub enum Expr<S> {
+///     // A `&mut` walk cannot descend into this field: `&mut Box<Stmt<'static, S>>` is
+///     // invariant in the lifetime, so there is no way in. Saying so here gives a clear error
+///     // instead of one from inside the macro.
+///     Stmt(#[skip] ::std::boxed::Box<crate::Stmt<'static, S>>),
+///     Lit(::core::marker::PhantomData<S>),
+/// }
+/// ```
+///
+/// # Announced for another reader too
+///
+/// A node that another reader needs announced as well — a `#[coinduction]` module exports a type by
+/// announcing it — keeps its one `#[announce]`: the announcements of an item merge into one
+/// trampoline, so this check and the other reader's options can share it. A `macro_name` renames
+/// the trampoline, which `define_visit!` then does not find.
 ///
 /// [`announce`]: https://docs.rs/announce
 pub use visiting_macro::visiting;
@@ -224,10 +181,10 @@ pub use visiting_macro::visiting;
 /// Take a `Doc` holding a list of `Item`s:
 ///
 /// ```ignore
-/// #[derive(Visiting)]
+/// #[announce::announce(visiting::visiting)]
 /// pub struct Doc { #[seq] items: ::std::vec::Vec<crate::Item> }
 ///
-/// #[derive(Visiting)]
+/// #[announce::announce(visiting::visiting)]
 /// pub struct Item(u32);
 ///
 /// pub mod visit { visiting::define_visit!(crate::Doc, crate::Item); }
@@ -282,9 +239,7 @@ pub use visiting_macro::visiting;
 ///
 /// ```
 /// mod grammar {
-///     use visiting::Visiting;
-///
-///     #[derive(Visiting)]
+///     #[announce::announce(visiting::visiting)]
 ///     #[visiting(crate::grammar::Expr)]
 ///     pub enum Expr {
 ///         Lit(u32),
@@ -394,8 +349,7 @@ pub use visiting_macro::visiting;
 /// A tuple holding a visitor is rejected:
 ///
 /// ```compile_fail
-/// use visiting::Visiting;
-/// #[derive(Visiting)]
+/// #[announce::announce(visiting::visiting)]
 /// pub enum Expr { Lit(u32) }
 /// pub mod visit { visiting::define_visit!(crate::Expr); }
 ///
@@ -420,9 +374,9 @@ pub use visiting_macro::visiting;
 /// visitor you already have. Name the base module, then `=>`, then the new types:
 ///
 /// ```ignore
-/// #[derive(Visiting)] pub enum Type<S> { .. }
-/// #[derive(Visiting)] pub enum Expr<S> { Typed(::std::boxed::Box<crate::Type<S>>), .. }
-/// #[derive(Visiting)] pub enum Stmt<S> { E(::std::boxed::Box<crate::Expr<S>>), .. }
+/// #[announce::announce(visiting::visiting)] pub enum Type<S> { .. }
+/// #[announce::announce(visiting::visiting)] pub enum Expr<S> { Typed(::std::boxed::Box<crate::Type<S>>), .. }
+/// #[announce::announce(visiting::visiting)] pub enum Stmt<S> { E(::std::boxed::Box<crate::Expr<S>>), .. }
 ///
 /// pub mod base { visiting::define_visit!(super::Type, super::Expr); }
 /// pub mod ext  { visiting::define_visit!(super::base => super::Stmt); }
@@ -484,9 +438,10 @@ pub use visiting_macro::visiting;
 ///
 /// # Rules
 ///
-/// Every listed type needs `#[derive(Visiting)]`. That derive writes the metadata this macro reads.
+/// Every listed type is a node: announced with the [`visiting`](macro@crate::visiting) check, whose
+/// trampoline carries the definition this macro reads.
 ///
-/// A type is known by the last segment of its path (see [`Visiting`]), and the generated names come
+/// A type is known by the last segment of its path (see [`visiting`](macro@crate::visiting)), and the generated names come
 /// from that segment, so two listed types ending in the same name are rejected.
 ///
 /// A type may be listed in only one `define_visit!` per crate. Each listing gives it its own
@@ -502,35 +457,6 @@ macro_rules! define_visit {
         use $crate::visit as __visiting_rt;
         $crate::_imp::visiting_macro::__visitor_entry! { @root { $crate } $($t)* }
     };
-}
-
-/// Marker trait implemented by every type declared a node — by `#[derive(Visiting)]`, or by a
-/// [`visiting(..)`](macro@crate::visiting) check handed to `#[announce]`.
-///
-/// It carries no methods; its only purpose is to let generic code (and the `#[visitor]` generator)
-/// bound on "is an AST node".
-#[cfg_attr(
-    has_diagnostic,
-    diagnostic::on_unimplemented(
-        message = "`{Self}` is not an AST node",
-        label = "not an AST node",
-        note = "declare `{Self}` a node — `#[derive(Visiting)]`, or a `visiting(..)` check in its \
-            `#[announce]` — since every entry in a follow-list has to be one"
-    )
-)]
-pub trait Visiting {}
-
-/// Plumbing, so generated code can name a type it cannot write a path to.
-///
-/// A node's field type may only be nameable where the node was defined — behind a private module,
-/// or through an alias. `#[derive(Visiting)]` records each such type as an impl of this trait on the
-/// node, numbered in declaration order, and the generated visitor writes
-/// `<Node as Repeater<0>>::Type` instead of a path. You should not need to write this yourself.
-///
-/// Built on the `type-leak` crate; `INDEX` matches `type_leak::Referrer::iter` order.
-pub trait Repeater<const INDEX: usize> {
-    /// The recorded type, nameable from anywhere as `<Node as Repeater<INDEX>>::Type`.
-    type Type: ?Sized;
 }
 
 // ── Slot views ──────────────────────────────────────────────────────────────────────────────────
@@ -989,7 +915,7 @@ pub mod walk {
         diagnostic::on_unimplemented(
             message = "`{Self}` cannot be walked at `{H}`",
             label = "this field's shape has no `Walk` impl",
-            note = "a visited node needs `#[derive(Visiting)]` and an entry in the owning type's `#[visiting(..)]`; \
+            note = "a visited node needs `#[announce(visiting::visiting)]` and an entry in the owning type's `#[visiting(..)]`; \
                 a container of one needs a `Walk` impl, which `visiting::visit` has for `Vec`, `VecDeque`, \
                 `Option`, `Box`, maps, slices, arrays and tuples, and which a crate can add for a \
                 container of its own"

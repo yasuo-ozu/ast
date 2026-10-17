@@ -8,19 +8,20 @@
 #![allow(dead_code)]
 
 mod ast {
-    use visiting::Visiting;
 
     /// A consumer leaf that shares a tuple with a followed node — the `Vec<(Length, Line)>` shape.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Length(pub i64);
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub enum Line {
         Text(i64),
         Nested(::std::boxed::Box<crate::ast::Line>),
     }
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::ast::Line)]
     pub struct Page {
         pub placed: ::std::vec::Vec<(crate::ast::Length, crate::ast::Line)>,
@@ -87,19 +88,20 @@ fn a_node_counts_itself_and_its_children() {
 
 // ── when two tuple shapes of one arity overlap ───────────────────────────────────────────────────
 mod collides {
-    use visiting::Visiting;
 
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Mark(pub i64);
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub enum Node {
         N(i64),
     }
 
     /// Two shapes of one arity, which an earlier design could not give separate impls: they are the
     /// same tuple impl at `(Here, Here)` and `(Skip, Here)`.
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::collides::Node)]
     pub struct Holder {
         pub both: ::std::vec::Vec<(crate::collides::Node, crate::collides::Node)>,

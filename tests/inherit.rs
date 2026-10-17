@@ -7,18 +7,19 @@
 #![allow(dead_code)]
 
 mod ast {
-    use visiting::Visiting;
 
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Tag(pub i64);
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub enum Leaf {
         N(i64),
     }
 
     /// Reaches `Leaf` four ways at once — plain, in a `Vec`, through a `Box`, and inside a tuple.
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::ast::Leaf)]
     pub struct Mid {
         pub direct: crate::ast::Leaf,
@@ -27,7 +28,8 @@ mod ast {
         pub tagged: ::std::vec::Vec<(crate::ast::Tag, crate::ast::Leaf)>,
     }
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::ast::Mid)]
     pub struct Top {
         pub mids: ::std::vec::Vec<crate::ast::Mid>,

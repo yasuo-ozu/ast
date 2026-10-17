@@ -5,16 +5,15 @@
 // Nested containers (`Vec<Option<T>>`, `Option<Vec<T>>`, `Vec<Vec<T>>`) are traversed.
 mod nested {
     use core::marker::PhantomData;
-    use visiting::Visiting;
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting()]
     pub struct Leaf<S> {
         pub _p: ::core::marker::PhantomData<S>,
         pub value: i64,
     }
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting(crate::nested::Leaf)]
     pub struct Holder<S> {
         pub vo: ::std::vec::Vec<::core::option::Option<crate::nested::Leaf<S>>>,
@@ -75,15 +74,14 @@ mod nested {
 // A tuple nested inside a container (`Vec<(A,B)>`, `Option<(A,B)>`, `Box<(A,B)>`) has its elements visited.
 mod container_of_tuple {
     use core::marker::PhantomData;
-    use visiting::Visiting;
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting()]
     pub struct Leaf<S> {
         pub _p: ::core::marker::PhantomData<S>,
     }
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting(crate::container_of_tuple::Leaf)]
     pub struct Holder<S> {
         pub top: (
@@ -148,14 +146,13 @@ mod container_of_tuple {
 // A tuple-typed field is destructured and each element lowered (top-level + nested tuples).
 mod tuple_field {
     use core::marker::PhantomData;
-    use visiting::Visiting;
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     pub enum Ty<S> {
         Unit(::core::marker::PhantomData<S>),
     }
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting(crate::tuple_field::Ty)]
     pub enum Expr<S> {
         Pair((crate::tuple_field::Ty<S>, crate::tuple_field::Ty<S>)),
@@ -257,7 +254,7 @@ mod map_view {
 // `SeqView`/`OptView` for the edit view, and `Walk`/`WalkMut` at `Thru<H>` for the descent.
 mod own_container {
     use visiting::walk::{Thru, Walk, WalkMut};
-    use visiting::{Elements, OptEdit, OptView, SeqEdit, SeqView, Visiting};
+    use visiting::{Elements, OptEdit, OptView, SeqEdit, SeqView};
 
     pub struct Punctuated<T, P>(Vec<T>, core::marker::PhantomData<P>);
 
@@ -385,10 +382,10 @@ mod own_container {
         }
     }
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     pub struct Item(pub u32);
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting(crate::own_container::Item)]
     pub struct Doc {
         #[seq]
@@ -482,7 +479,7 @@ mod own_container {
 // a traversal it writes itself.
 mod own_map {
     use visiting::walk::{Thru, Walk, WalkMut};
-    use visiting::{Elements, Visiting};
+    use visiting::Elements;
 
     /// An association list, which is a map whose values are *projected* out of its entries rather
     /// than stored apart. So its iterators are `Map<slice::Iter<..>, fn(..) -> ..>` — nameable
@@ -532,10 +529,10 @@ mod own_map {
         }
     }
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     pub struct Item(pub u32);
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting(crate::own_map::Item)]
     pub struct Doc {
         // No marker: a keyed slot has no positional edit, so the field is walked and nothing else.
@@ -597,12 +594,11 @@ mod own_map {
 // else exercises: a `VecDeque`, a fixed-size array and a slice behind a reference.
 mod other_shapes {
     use std::collections::VecDeque;
-    use visiting::Visiting;
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     pub struct Leaf(pub u32);
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting(crate::other_shapes::Leaf)]
     pub struct Holder {
         pub deque: ::std::collections::VecDeque<crate::other_shapes::Leaf>,

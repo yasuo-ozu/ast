@@ -18,11 +18,10 @@ proc-macro2 = "1.0"
 quote = "1.0"
 template-quote = "0.4"
 proc-macro-error3 = { version = "3", default-features = false }
-type-leak = "0.7.0"
-# The protocol parser, `announce_core::helper` (`Input`, `Entry`, `CheckInput`, `OwnedAttrs`), and
-# the generator behind `#[derive(Announce)]`, `derive_announce_with`, which the derive announces each
-# node with. `announce` itself re-exports both, but a proc macro needs nothing else of it, and
-# depending on the core crate keeps the consumer-side crate out of the build graph.
+# Only the protocol parser is used, `announce_core::helper` (`Input`, `Entry`, `CheckInput`,
+# `OwnedAttrs`). `announce` itself re-exports the same module as `announce::helper`, but a proc macro
+# needs nothing else of it, and depending on the core crate keeps the consumer-side crate out of the
+# build graph.
 announce-core = "0.1.1"
 
 [dependencies.syn]

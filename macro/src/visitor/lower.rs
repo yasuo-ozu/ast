@@ -84,8 +84,8 @@ pub(crate) fn tuple_impls(
         .collect()
 }
 
-/// The `#[seq]`/`#[opt]` marker on a field (`None` if unmarked), preserved into the `#[derive(Visiting)]`
-/// metadata so the visitor can dispatch the field through its `SeqView`/`OptView` view.
+/// The `#[seq]`/`#[opt]` marker on a field (`None` if unmarked), kept in the announced definition so
+/// the visitor can dispatch the field through its `SeqView`/`OptView` view.
 fn field_view(attrs: &[Attribute]) -> Option<Container> {
     let seq = attrs.iter().any(|a| a.path().is_ident("seq"));
     let opt = attrs.iter().any(|a| a.path().is_ident("opt"));

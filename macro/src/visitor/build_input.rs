@@ -737,8 +737,8 @@ pub(crate) fn state_tokens(
 /// A fetch invokes the target's trampoline with this macro as the last continuation, so what comes
 /// back is announce's shape — the continuation list, the definitions newest-first, then our state as
 /// announce's untouched `REST`, behind an `@state` marker. The definition and the follow-list are
-/// read out of the entry; the follow-list rides in announce's `META` as `visiting(..)`, written
-/// either by our own derive or by a `visiting(..)` check the definer passed to `#[announce]`. A type
+/// read out of the entry; the follow-list rides in announce's `META` as `visiting(..)`, written by
+/// the `visiting(..)` check the definer passed to `#[announce]`, or in the definition. A type
 /// announced by a crate that has never heard of this one carries none, which is right: it is a leaf.
 ///
 /// The first bounce carries only state, with no announce wrapper, so both shapes are accepted.
@@ -763,11 +763,10 @@ fn parse_callback_or_state(input: TokenStream) -> syn::Result<BuildInput> {
             if let Some(entry) = ann.entries.first() {
                 let def = entry.item()?;
                 // The follow-list arrives by either of two routes, and a node may use both.
-                // `visiting(..)` in META is what our derive renders (resolved) and what a definer
-                // wrote in the check's arguments — `find_meta` compares last segments, so the
-                // check's own `visiting::visiting(..)` matches the same name. `#[visiting(..)]`
-                // *inside* the definition is the third: an attribute the check owns, which announce
-                // keeps in the payload.
+                // `visiting(..)` in META is what a definer wrote in the check's arguments —
+                // `find_meta` compares last segments, so the check's own `visiting::visiting(..)`
+                // matches. `#[visiting(..)]` *inside* the definition is the other: an attribute the
+                // check owns, which announce keeps in the payload.
                 if let Some(m) = entry.find_meta("visiting") {
                     if let Some(args) = m.args.clone() {
                         st.just_subast = parse_follow_meta(args)?;

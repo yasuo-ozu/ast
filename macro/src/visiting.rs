@@ -1,4 +1,4 @@
-use crate::util::{angle, data_field_iter, for_each_type_path, gargs, gparams};
+use crate::util::{data_field_iter, for_each_type_path};
 use proc_macro2::{Literal, TokenStream};
 use proc_macro_error3::{abort, emit_error};
 use std::collections::{HashMap, HashSet};
@@ -7,7 +7,6 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::*;
 use template_quote::quote;
-use type_leak::Leaker;
 
 /// One `#[visiting(..)]` entry: a path to a sub-AST type, optionally aliased (`b::Foo as BFoo`). The
 /// `matchkey` (the alias, or the path's last segment) is the ident a field head is matched against;
@@ -153,8 +152,8 @@ fn validate_follow(entries: &[SubastEntry]) {
     // The rule is unconditional rather than applied only to fetched entries, because which entries are
     // fetched depends on the `define_visit!(..)` list — so a conditional rule would accept an attribute
     // today and reject it when someone stops listing that type, and would report at the `define_visit!`
-    // invocation rather than at the attribute. A derive-emitted `pub use` could launder a relative path
-    // (a `use` resolves where it is written), but only one level deep: past the first hop the alias
+    // invocation rather than at the attribute. A `pub use` beside the definition could launder a
+    // relative path (a `use` resolves where it is written), but only one level deep: past the first hop the alias
     // hides the module the next fetch needs, so the restriction would come back a level further from
     // the code that has to change.
     for e in entries {
@@ -225,79 +224,6 @@ fn validate_follow(entries: &[SubastEntry]) {
     }
 }
 
-/// Produce a cleaned copy of the input definition (attributes stripped, except the field-level
-/// `#[seq]`/`#[opt]`/`#[skip]` markers, preserved so `__visitor_build` sees them) so it can be
-/// embedded verbatim inside the metadata `macro_rules!` and re-parsed as a `syn::Item`.
-pub(crate) fn cleaned_definition(input: &DeriveInput) -> DeriveInput {
-    // Keep only the field markers the visitor reads: `#[seq]`/`#[opt]` dispatch a field through its
-    // `SeqView`/`OptView` edit method, `#[skip]` stops it being followed at all. Drop everything else.
-    fn clean_field_attrs(f: &mut Field) {
-        f.attrs.retain(|a| {
-            a.path().is_ident("seq") || a.path().is_ident("opt") || a.path().is_ident("skip")
-        });
-        f.vis = Visibility::Inherited;
-    }
-    let mut di = input.clone();
-    di.attrs.clear();
-    di.vis = Visibility::Public(Default::default());
-    match &mut di.data {
-        Data::Enum(e) => {
-            for v in &mut e.variants {
-                v.attrs.clear();
-                for f in &mut v.fields {
-                    clean_field_attrs(f);
-                }
-            }
-        }
-        Data::Struct(s) => {
-            for f in &mut s.fields {
-                clean_field_attrs(f);
-            }
-        }
-        Data::Union(u) => {
-            for f in &mut u.fields.named {
-                clean_field_attrs(f);
-            }
-        }
-    }
-    di
-}
-
-/// Build a `type_leak::Referrer` for the definition (the ordered list of field types that depend on
-/// the definition's type context). `None` if type-leak can't analyze it (e.g. a union, or a
-/// not-internable contradiction); the derive then simply omits the leaker.
-fn build_referrer(input: &DeriveInput) -> Option<type_leak::Referrer> {
-    let mut leaker = match &input.data {
-        Data::Struct(ds) => {
-            let item = ItemStruct {
-                attrs: vec![],
-                vis: Visibility::Inherited,
-                struct_token: ds.struct_token,
-                ident: input.ident.clone(),
-                generics: input.generics.clone(),
-                fields: ds.fields.clone(),
-                semi_token: ds.semi_token,
-            };
-            Leaker::from_struct(&item).ok()?
-        }
-        Data::Enum(de) => {
-            let item = ItemEnum {
-                attrs: vec![],
-                vis: Visibility::Inherited,
-                enum_token: de.enum_token,
-                ident: input.ident.clone(),
-                generics: input.generics.clone(),
-                brace_token: de.brace_token,
-                variants: de.variants.clone(),
-            };
-            Leaker::from_enum(&item).ok()?
-        }
-        Data::Union(_) => return None,
-    };
-    leaker.reduce_roots();
-    Some(leaker.finish())
-}
-
 /// Every ident that appears as a path segment anywhere inside a field type (so `Vec<Box<Stmt<S>>>`
 /// contributes `Vec`, `Box`, `Stmt`, `S`). Used only to warn about `#[visiting]` entries that match no
 /// field — an over-approximation, so it never false-warns.
@@ -314,152 +240,6 @@ fn field_head_idents(input: &DeriveInput) -> HashSet<String> {
 /// Call `f` for every field type of a derive input's body.
 fn for_each_field_type_of(data: &Data, f: &mut dyn FnMut(&Type)) {
     data_field_iter(data).for_each(|fld| f(&fld.ty));
-}
-
-/// `#[derive(Visiting)]` expansion.
-///
-/// Emits:
-/// * `impl Visiting for T<..> {}` (the empty marker trait from `visit`),
-/// * one `impl Repeater<N> for T<..>` per context-dependent field type, so it can be named
-///   portably as `<T<..> as Repeater<N>>::Type` (external-metadata fallback; the visitor/drill path
-///   uses `#[visiting]`-resolved paths),
-/// * the announcement of the node — announce's trampoline under the type's own name, carrying a
-///   cleaned copy of the definition and the `#[visiting]` allowlist, so a generated visitor reaches it
-///   as `path::to::T! { .. }`, and `impl Announce for T<..>` — unless another announcement of the item
-///   makes them (see [`announce_node`]).
-pub fn derive_visiting(input: &DeriveInput) -> TokenStream {
-    let ident = &input.ident;
-    let (_, _, where_clause) = input.generics.split_for_impl();
-
-    // A union has no fields a walk could enter, and nothing downstream handles one: accepting it
-    // here only defers the complaint to `define_visit!`, which would report "no AST definitions
-    // resolved" — a sentence about the visitor, for a mistake in the derive.
-    if let syn::Data::Union(_) = &input.data {
-        abort!(
-            ident,
-            "`#[derive(Visiting)]` works on a struct or an enum; a union has no walkable fields"
-        );
-    }
-
-    check_ambiguous_last_idents(input);
-    let paths_absolute = crate::absolute::check(input);
-    let attr = parse_visiting(&input.attrs);
-    validate_follow(&attr.follow);
-    let subast = attr.follow;
-    let unmatched_warnings = warn_unmatched_entries(input, &subast);
-    // Which crate the generated code names. `#[visiting(crate = ::my_crate)]` points it at a facade
-    // that re-exports this crate, which is what a grammar depending only on that facade needs;
-    // otherwise the impls read `::visiting::..`.
-    let root = &attr.krate.unwrap_or_else(|| parse_quote!(::visiting));
-
-    // type-leak: one `Repeater<N>` impl **on the AST type itself** per context-dependent field type
-    // (`<T as Repeater<N>>::Type` names that type portably from another crate). No separate leaker
-    // marker — the type is its own host (same generics + where-clause).
-    let referrer = build_referrer(input);
-    let repeater_items: TokenStream = if let Some(referrer) = &referrer {
-        let g_def = angle(&gparams(&input.generics));
-        let g_use = angle(&gargs(&input.generics));
-        let leak_tys: Vec<&Type> = referrer.iter().collect();
-        quote! {
-            #(for (n, ty) in leak_tys.iter().enumerate()) {
-                #[automatically_derived]
-                // This associated type mirrors a user field type verbatim, so a deliberate AST shape can
-                // trip clippy's type-shape lints (`Box<Vec<_>>`, `Vec<Box<_>>`, deep nesting); silence them
-                // on the generated mirror so they never surface in a consumer's lint output.
-                #[allow(clippy::box_collection, clippy::vec_box, clippy::type_complexity)]
-                impl #g_def #root::visit::Repeater< #{Literal::usize_unsuffixed(n)} >
-                    for #ident #g_use #where_clause
-                {
-                    type Type = #ty;
-                }
-            }
-        }
-    } else {
-        quote!()
-    };
-
-    let marker = node_marker(input, &subast, root);
-
-    // Another announcement of this item makes the trampoline, and a visitor reads the follow-list
-    // and the field markers from its payload instead. A second trampoline would take the same name.
-    // With a relative path, announce would only repeat the first of the errors already reported.
-    let trampoline = if announced_elsewhere(&input.attrs) || !paths_absolute {
-        quote!()
-    } else {
-        announce_node(input, root, &subast)
-    };
-
-    quote! {
-        #marker
-
-        #unmatched_warnings
-
-        #repeater_items
-
-        #trampoline
-    }
-}
-
-/// The trampoline and the `Announce` impl that `#[derive(Announce)]` would write, through announce
-/// itself, so that a visitor and any other announce consumer read the node the same way.
-///
-/// The payload is the cleaned definition, whose paths announce checks as for any announced item —
-/// absolute or `crate::`-rooted, since it is re-used where the visitor is built — and the
-/// follow-list rides in META as `visiting(..)`, where announce re-roots its `crate::` paths at
-/// `$crate::`. announce is reached through the crate's own re-export, `#root::visit::__announce`, so a node
-/// needs no dependency on it.
-fn announce_node(input: &DeriveInput, root: &Path, subast: &[SubastEntry]) -> TokenStream {
-    let mut item = cleaned_definition(input);
-    // announce re-exports the trampoline at the item's visibility.
-    item.vis = input.vis.clone();
-    let entries = subast.iter().map(|e| {
-        let (path, key) = (&e.path, e.matchkey());
-        quote!( #path as #key )
-    });
-    let opts: announce_core::Options = match syn::parse2(quote! {
-        crate = #root::visit::__announce,
-        meta = visiting( #(#entries),* )
-    }) {
-        Ok(opts) => opts,
-        Err(e) => return e.to_compile_error(),
-    };
-    announce_core::derive_announce_with(opts, quote!(#item))
-        .unwrap_or_else(|e| e.to_compile_error())
-}
-
-/// Whether an attribute left on the item announces it: an `#[announce]` below the derive (any
-/// path, since this derive owns no `announce` helper), one that has already moved below the other
-/// attributes (it carries announce's `__announce_deferred` mark, also under a renamed import), or a
-/// `#[derive(Announce)]`. The same signs announce's own derive stands aside for.
-fn announced_elsewhere(attrs: &[Attribute]) -> bool {
-    fn carries_mark(ts: TokenStream) -> bool {
-        ts.into_iter().any(|tt| match tt {
-            proc_macro2::TokenTree::Ident(i) => i == "__announce_deferred",
-            proc_macro2::TokenTree::Group(g) => carries_mark(g.stream()),
-            _ => false,
-        })
-    }
-    attrs.iter().any(|a| {
-        let last = match a.path().segments.last() {
-            Some(s) => &s.ident,
-            None => return false,
-        };
-        if last == "announce" {
-            return true;
-        }
-        if last == "derive" {
-            return a
-                .parse_args_with(Punctuated::<Path, Token![,]>::parse_terminated)
-                .map_or(false, |ps| {
-                    ps.iter()
-                        .any(|p| p.segments.last().map_or(false, |s| s.ident == "Announce"))
-                });
-        }
-        match &a.meta {
-            Meta::List(l) => carries_mark(l.tokens.clone()),
-            _ => false,
-        }
-    })
 }
 
 /// A path with its generic arguments stripped, as a comparable spelling (`Vec<Box<T>>` → `Vec`).
@@ -565,18 +345,12 @@ fn unmatched_entry_warning(e: &SubastEntry, key: &Ident, ident: &Ident) -> Token
     }
 }
 
-/// What makes a type a *node*, as opposed to a type a visitor merely knows the shape of: the
-/// `Visiting` marker impl, plus one assertion per follow entry that the entry is a node too.
-///
-/// Shared by `#[derive(Visiting)]` and the `announce` check, which agree on this part and differ
-/// only in who carries the definition to the visitor — our own metadata macro, or announce's
-/// trampoline.
-fn node_marker(input: &DeriveInput, subast: &[SubastEntry], root: &Path) -> TokenStream {
-    let ident = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+/// One assertion per follow entry that the entry is announced too, so a visitor can fetch it.
+fn follow_announced(input: &DeriveInput, subast: &[SubastEntry], root: &Path) -> TokenStream {
+    let (impl_generics, _, where_clause) = input.generics.split_for_impl();
 
-    // Every `#[visiting]` entry must itself be a node. Without this the omission surfaces only when a
-    // `define_visit!` tries to expand the entry's metadata macro, as `cannot find `X` in `$crate`` — a
+    // Every `#[visiting]` entry must itself be announced. Without this the omission surfaces only when
+    // a `define_visit!` tries to expand the entry's trampoline, as `cannot find `X` in `$crate`` — a
     // message about a macro the user never wrote, in a module far from the attribute at fault.
     //
     // The bound names the matching FIELD's type, not the `#[visiting]` path: an entry is written bare
@@ -610,7 +384,7 @@ fn node_marker(input: &DeriveInput, subast: &[SubastEntry], root: &Path) -> Toke
                     fn #{Ident::new("__visiting_subast_entry_is_a_node", span)}
                         #impl_generics () #where_clause
                     {
-                        fn assert_node<__VisitingT: ?Sized + #root::visit::Visiting>() {}
+                        fn assert_node<__VisitingT: ?Sized + #root::visit::__announce::Announce>() {}
                         let _ = assert_node::<#tp>;
                     }
                 };
@@ -619,9 +393,6 @@ fn node_marker(input: &DeriveInput, subast: &[SubastEntry], root: &Path) -> Toke
         .collect();
 
     quote! {
-        #[automatically_derived]
-        impl #impl_generics #root::visit::Visiting for #ident #ty_generics #where_clause {}
-
         #(#subast_are_nodes)*
     }
 }
@@ -642,19 +413,13 @@ fn item_kind(item: &Item) -> &'static str {
 /// `#[announce(visiting::visiting)]` asks announce for three things. It invokes this macro beside
 /// the definition, as `visiting! { (ARGS), ITEM }`. It lets the item carry our attributes —
 /// `#[visiting(..)]`, `#[seq]`, `#[opt]`, `#[skip]` — which this check *owns*: announce strips them
-/// from the item it emits (rustc would reject what no derive declares) and keeps them in the payload
+/// from the item it emits (rustc does not know them) and keeps them in the payload
 /// a visitor reads. And it records the check's own arguments in META, so a follow-list may be
 /// written there instead.
 ///
-/// Being expanded *beside the definition* is the whole point. The `Visiting` marker impl belongs to
-/// the crate that owns the type, so a visitor in another crate cannot supply it — which is why an
-/// `#[announce]`d type had to be marked by hand, and why a type from a crate that only announces
-/// could not be walked at all. The check is that hand, moved to the one place the orphan rule allows
-/// it to be written.
-///
-/// It deliberately does *not* emit a metadata macro: announce's trampoline already carries the
-/// definition. Nor does it emit the `Repeater` table the derive writes for context-dependent field
-/// types — announce's own `repeater = ..` covers that, and the two would collide.
+/// Being expanded *beside the definition*, it validates the node where it is written, and asserts
+/// that each follow entry is announced too. It emits no metadata of its own: announce's trampoline
+/// carries the definition.
 pub fn check(input: &announce_core::helper::CheckInput) -> TokenStream {
     // Only a struct or an enum can be a node. `#[announce]` also takes a trait, a type alias and an
     // inline `mod`, so the rule has to be stated here rather than left to the visitor, which would
@@ -669,16 +434,9 @@ pub fn check(input: &announce_core::helper::CheckInput) -> TokenStream {
             kind
         ),
     };
-    // A derive of ours on the same item cannot be detected here: rustc removes `#[derive(..)]`
-    // before the capture derive that `#[announce]` hangs the check off runs, so the attribute list
-    // never holds it (verified — the check sees only the attributes it owns). It is a real mistake,
-    // since the derive would not see its own attributes either, this check having taken them; and it
-    // is caught, because both sides emit the marker impl, so rustc reports E0119 naming the derive
-    // and the `#[announce]` that collide.
     validate_owned_attributes(input, &di);
     // The follow-list may be written in the check's arguments or in `#[visiting(..)]` on the item,
-    // and both at once: one `crate = ..` between them, entries from either. The attribute is the
-    // same spelling a deriving type uses, which is the point of owning the name.
+    // and both at once: one `crate = ..` between them, entries from either.
     let mut attr = match VisitingAttribute::parse.parse2(input.args.clone()) {
         Ok(a) => a,
         Err(e) => {
@@ -691,8 +449,8 @@ pub fn check(input: &announce_core::helper::CheckInput) -> TokenStream {
     check_ambiguous_last_idents(&di);
     let unmatched_warnings = warn_unmatched_entries(&di, &attr.follow);
     let root = attr.krate.unwrap_or_else(|| parse_quote!(::visiting));
-    let marker = node_marker(&di, &attr.follow, &root);
-    quote! { #marker #unmatched_warnings }
+    let announced = follow_announced(&di, &attr.follow, &root);
+    quote! { #announced #unmatched_warnings }
 }
 
 /// Check where the attributes this check owns were written.

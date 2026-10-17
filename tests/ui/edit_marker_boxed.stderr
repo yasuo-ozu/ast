@@ -1,10 +1,10 @@
 error: a `#[seq]` field must be a *single* container of the element (e.g. `Vec<Leaf>`); a nested or wrapped container (`Vec<Box<Leaf>>`, `Box<Vec<Leaf>>`, …) can't be edited in place — use a bare `Vec<Leaf>` / `Option<Leaf>`
-  --> tests/ui/edit_marker_boxed.rs:16:16
+  --> tests/ui/edit_marker_boxed.rs:15:16
    |
-16 |     pub items: ::std::boxed::Box<::std::vec::Vec<crate::Leaf<S>>>,
+15 |     pub items: ::std::boxed::Box<::std::vec::Vec<crate::Leaf<S>>>,
    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ...
-20 |     visiting::define_visit!(crate::Wrap, crate::Leaf);
+19 |     visiting::define_visit!(crate::Wrap, crate::Leaf);
    |     ------------------------------------------------- in this macro invocation
    |
    = note: this error originates in the macro `crate::Wrap` which comes from the expansion of the macro `visiting::define_visit` (in Nightly builds, run with -Z macro-backtrace for more info)

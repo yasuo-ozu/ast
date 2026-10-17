@@ -2,7 +2,7 @@ error: this type's fields spell 2 different paths ending in `Stmt` (crate::Stmt,
 
          = help: give one a distinct name, or name it through a `#[visiting(<path> as Alias)]` entry and write that alias in the field
 
-  --> tests/ui/ambiguous_last_ident.rs:18:13
+  --> tests/ui/ambiguous_last_ident.rs:17:13
    |
-18 |     Foreign(crate::other::Stmt),
+17 |     Foreign(crate::other::Stmt),
    |             ^^^^^^^^^^^^^^^^^^

@@ -3,26 +3,25 @@
 #![allow(dead_code)]
 
 use core::marker::PhantomData;
-use visiting::Visiting;
 
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 pub enum Type<S> {
     Unit(::core::marker::PhantomData<S>),
 }
 
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 #[visiting(crate::Type)]
 pub enum Expr<S> {
     T(::std::boxed::Box<crate::Type<S>>),
 }
 
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 #[visiting(crate::Expr)]
 pub enum Stmt<S> {
     E(::std::boxed::Box<crate::Expr<S>>),
 }
 
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 #[visiting(crate::Stmt)]
 pub enum Item<S> {
     S(::std::boxed::Box<crate::Stmt<S>>),

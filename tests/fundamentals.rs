@@ -4,16 +4,17 @@
 // Basic descent through Box; struct visitors, single closures, tuples of closures.
 mod basic {
     use core::marker::PhantomData;
-    use visiting::Visiting;
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::basic::Stmt)]
     pub enum Expr<S> {
         Stmt(::std::boxed::Box<crate::basic::Stmt<S>>),
         Other(::core::marker::PhantomData<S>),
     }
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::basic::Expr)]
     pub enum Stmt<S> {
         Expr(::std::boxed::Box<crate::basic::Expr<S>>),
@@ -78,9 +79,9 @@ mod basic {
 // visit_mut mirror: mutate nodes in place via closures and struct visitors.
 mod mutable {
     use core::marker::PhantomData;
-    use visiting::Visiting;
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub enum Expr<S> {
         Add(
             ::std::boxed::Box<crate::mutable::Expr<S>>,
@@ -145,9 +146,9 @@ mod mutable {
 #[allow(non_camel_case_types)]
 mod hygiene {
     use core::marker::PhantomData;
-    use visiting::Visiting;
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub enum Node<__V, __T, __H, __F, __A, __B> {
         Rec(::std::boxed::Box<crate::hygiene::Node<__V, __T, __H, __F, __A, __B>>),
         Leaf(::core::marker::PhantomData<(__V, __T, __H, __F, __A, __B)>),
@@ -171,7 +172,8 @@ mod hygiene {
     }
 
     // The indexed tuple-closure helper family (`__F0`/`__T0`/…) is protected by `fresh_prefix`.
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub enum Tup<__F0, __T0> {
         Rec(::std::boxed::Box<crate::hygiene::Tup<__F0, __T0>>),
         Leaf(::core::marker::PhantomData<(__F0, __T0)>),
@@ -196,12 +198,14 @@ mod hygiene {
 
     // Value bindings (the generated receiver `this` / scrutinee `i`) are span-isolated from user
     // idents, so a visited type may have followed fields literally named `this` and `i`.
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub enum Leaf<S> {
         U(::core::marker::PhantomData<S>),
     }
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::hygiene::Leaf)]
     pub struct Names<S> {
         pub this: ::std::boxed::Box<crate::hygiene::Leaf<S>>,
@@ -247,10 +251,10 @@ mod local_types {
     }
 
     mod ast {
-        use visiting::Visiting;
 
         // `Local` is intentionally a leaf; `Rec` is followed via implicit self-recursion.
-        #[derive(Debug, Visiting)]
+        #[announce::announce(visiting::visiting)]
+        #[derive(Debug)]
         #[visiting()]
         pub enum Expr<S> {
             Lit(
@@ -280,14 +284,13 @@ mod local_types {
 #[allow(dead_code)]
 mod where_clause {
     use core::marker::PhantomData;
-    use visiting::Visiting;
 
     pub trait Bound {}
     impl Bound for () {}
 
     // The bound is written as a resolvable path because the generated items live in `mod v` — the
     // same canonical-path requirement the `#[visiting]` paths have.
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting()]
     pub enum Expr<S>
     where
@@ -313,9 +316,8 @@ mod where_clause {
 // A single visitor over types with different generic arities; the trait is keyed on the union.
 mod generics {
     use core::marker::PhantomData;
-    use visiting::Visiting;
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting(crate::generics::BinOp)]
     pub enum Expr<S, Tokens> {
         Bin(
@@ -326,7 +328,7 @@ mod generics {
         Lit(i64, ::core::marker::PhantomData<(S, Tokens)>),
     }
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     pub enum BinOp<S> {
         Add(::core::marker::PhantomData<S>),
         Mul(::core::marker::PhantomData<S>),
@@ -360,11 +362,10 @@ mod generics {
 #[allow(dead_code)]
 mod union_where_unshared {
     use core::marker::PhantomData;
-    use visiting::Visiting;
 
     pub trait Bound {}
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting()]
     pub struct Bounded<S>
     where
@@ -373,7 +374,7 @@ mod union_where_unshared {
         pub _p: ::core::marker::PhantomData<S>,
     }
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting()]
     pub struct Plain {
         pub _x: u8,

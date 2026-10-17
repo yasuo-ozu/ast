@@ -1,5 +1,4 @@
-# A crate that only *announces*. It is the other side of the orphan rule: a visitor built in
-# another crate cannot implement `Visiting` for these types, so they have to mark themselves.
+# A crate that announces its nodes, for a visitor built in another crate.
 [package]
 name = "visiting-foreign-fixture"
 version = "0.0.0"
@@ -11,5 +10,5 @@ publish = false
 path = "src/lib.rs"
 
 [dependencies]
-announce = "0.1.0"
+announce = "0.1.1"
 visiting = { path = "../.." }

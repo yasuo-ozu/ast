@@ -2,14 +2,13 @@
 //! container (`Vec<Head>` / `Option<Head>`); a wrapped or nested container isn't an edit target (it
 //! still descends). Clean abort pointing at the field type, not a cryptic `SeqView` trait error.
 use core::marker::PhantomData;
-use visiting::Visiting;
 
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 pub enum Leaf<S> {
     A(::core::marker::PhantomData<S>),
 }
 
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 #[visiting(crate::Leaf)]
 pub struct Wrap<S> {
     #[seq]

@@ -1,14 +1,13 @@
 //! `#[seq]` on a fixed-size array — arrays traverse as sequences but have no `SeqView` impl (they can't
 //! be structurally edited). This is a clean error, not a cryptic `[Leaf; N]: SeqView<Leaf>` trait error.
 use core::marker::PhantomData;
-use visiting::Visiting;
 
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 pub enum Leaf<S> {
     A(::core::marker::PhantomData<S>),
 }
 
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 #[visiting(crate::Leaf)]
 pub struct Wrap<S> {
     #[seq]

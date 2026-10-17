@@ -3,11 +3,11 @@ name = "visiting"
 version = "0.2.0"
 edition = "2021"
 rust-version = "1.61"
-description = "Walk a derived syntax tree: the Visiting derive and the define_visit! generator"
+description = "Walk an announced syntax tree: the visiting check for announce, and the define_visit! generator"
 license = "MIT"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
 repository = "https://github.com/yasuo-ozu/visiting"
-keywords = ["ast", "visitor", "syntax-tree", "derive", "proc-macro"]
+keywords = ["ast", "visitor", "syntax-tree", "announce", "proc-macro"]
 categories = ["development-tools::procedural-macro-helpers", "parsing"]
 # The README links the logo by its raw URL, so the file itself need not ship in the crate.
 # The fixture crate is a workspace member for the cross-crate test, not content of this one, and it
@@ -28,19 +28,21 @@ version_check = "0.9"
 
 [dependencies]
 visiting-macro = { path = "macro", version = "0.2.0" }
-# The derive announces each node, and the code announce writes names it through `visit::__announce`.
-# Only `Announce` and announce's hidden runtime are needed, so its proc-macro API stays off.
+# The check asserts that every follow entry is announced, naming `Announce` through `visit::__announce`.
+# Only that trait is needed, so announce's proc-macro API stays off.
 announce = { version = "0.1.1", default-features = false }
 
 [dev-dependencies]
 trybuild = "1.0"
-# The tests write `#[announce]` themselves, which needs the default features.
+# The tests declare their nodes with `#[announce]`, which needs the default features.
 announce = "0.1.1"
 visiting-foreign-fixture = { path = "tests/foreign" }
 
-# Several announcements of one item merge only on announce's `merge-announcements` branch, which a
-# node deriving `Visiting` and also carrying `#[announce]` relies on. Drop this once it is released.
+# A node is declared with `#[announce]`, and a node that another reader announces too relies on its
+# announcements merging into one trampoline — announce's unreleased `merge-announcements` branch.
+# Pinned by commit, since the lock file is not committed and the branch moves. Drop this once it is
+# released.
 [patch.crates-io]
-announce = { git = "https://github.com/yasuo-ozu/announce", branch = "merge-announcements" }
-announce-core = { git = "https://github.com/yasuo-ozu/announce", branch = "merge-announcements" }
-announce-macros = { git = "https://github.com/yasuo-ozu/announce", branch = "merge-announcements" }
+announce = { git = "https://github.com/yasuo-ozu/announce", rev = "b2c9346" }
+announce-core = { git = "https://github.com/yasuo-ozu/announce", rev = "b2c9346" }
+announce-macros = { git = "https://github.com/yasuo-ozu/announce", rev = "b2c9346" }

@@ -4,12 +4,11 @@
 
 // `#[skip]` prunes one field. The walk still enters its siblings, so this is not "stop here".
 mod skip {
-    use visiting::Visiting;
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     pub struct Leaf(pub u32);
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting(crate::skip::Leaf)]
     pub struct Node {
         pub a: crate::skip::Leaf,
@@ -46,20 +45,19 @@ mod skip {
     }
 }
 
-// `#[visiting(crate = <path>)]` makes the derive name a facade instead of `::visiting`, so a grammar depending only
-// on that facade needs no direct dependency on this crate. The module below stands in for one.
+// `#[visiting(crate = <path>)]` makes the check name a facade instead of `::visiting`, so a grammar depending only
+// on that facade needs no direct dependency on this crate. The module below stands in for one: the
+// check is reached through it too, and so is `define_visit!`.
 mod facade {
     pub mod my_crate {
         pub use visiting::*;
     }
 
-    use my_crate::Visiting;
-
-    #[derive(Visiting)]
+    #[announce::announce(crate::facade::my_crate::visiting)]
     #[visiting(crate = crate::facade::my_crate)]
     pub struct Leaf(pub u32);
 
-    #[derive(Visiting)]
+    #[announce::announce(crate::facade::my_crate::visiting)]
     #[visiting(crate = crate::facade::my_crate)]
     #[visiting(crate::facade::Leaf)]
     pub struct Node {
@@ -67,11 +65,11 @@ mod facade {
     }
 
     pub mod v {
-        visiting::define_visit!(super::Leaf, super::Node);
+        crate::facade::my_crate::define_visit!(super::Leaf, super::Node);
     }
 
     #[test]
-    fn the_derive_names_the_facade() {
+    fn the_check_names_the_facade() {
         let n = Node {
             leaves: vec![Leaf(1), Leaf(2)],
         };

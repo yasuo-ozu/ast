@@ -1,18 +1,11 @@
-//! `#[derive(Visiting)]` announces the node itself, so a type that is also announced for another
-//! reader — `#[announce]` or `#[derive(Announce)]` — has two announcements. The derive stands aside
-//! for the other one, which then carries the follow-list and the field markers in its payload; one
-//! trampoline serves the visitor and every other announce consumer.
-//!
-//! The other announcement checks the item's paths as announce always does, so these definitions
-//! write them absolutely. A node that only derives keeps writing them however it likes.
+//! A node that another reader announces too — a `#[coinduction]` module exports a type by announcing
+//! it — has two `#[announce]` attributes. They merge into one trampoline, which carries the check's
+//! follow-list and the field markers to the visitor and serves every other announce consumer.
 #![allow(dead_code)]
 
-use visiting::Visiting;
-
-/// `#[announce]` above the derive: it moves below the derive before it announces, so the derive
-/// sees it and leaves the trampoline to it.
+/// The check's announcement first.
+#[announce::announce(visiting::visiting)]
 #[announce::announce]
-#[derive(Visiting)]
 #[visiting(crate::Leaf)]
 pub struct Doc {
     #[seq]
@@ -21,25 +14,15 @@ pub struct Doc {
     pub note: crate::Leaf,
 }
 
-/// `#[announce]` below the derive.
-#[derive(Visiting)]
+/// The other reader's announcement first.
 #[announce::announce]
+#[announce::announce(visiting::visiting)]
 pub struct Leaf {
     pub n: u32,
 }
 
-/// A `#[derive(Announce)]` of its own below the derive. Not next to it: rustfmt merges adjacent
-/// derives into one list, and the derive cannot see one in its own list.
-#[derive(Visiting)]
-#[visiting(crate::Leaf)]
-#[derive(announce::Announce)]
-pub enum Wrap {
-    One(crate::Leaf),
-    Doc(::std::boxed::Box<crate::Doc>),
-}
-
 pub mod v {
-    visiting::define_visit!(crate::Wrap, crate::Doc, crate::Leaf);
+    visiting::define_visit!(crate::Doc, crate::Leaf);
 }
 
 #[test]
@@ -48,9 +31,8 @@ fn one_announcement_serves_the_visitor() {
         leaves: vec![Leaf { n: 1 }, Leaf { n: 2 }],
         note: Leaf { n: 9 },
     };
-    let w = Wrap::Doc(Box::new(d));
     let mut seen = Vec::new();
-    w.visit(|l: &Leaf| seen.push(l.n));
+    d.visit(|l: &Leaf| seen.push(l.n));
     assert_eq!(
         seen,
         vec![1, 2],
@@ -63,21 +45,18 @@ fn each_is_announced_once() {
     fn announced<T: announce::Announce>() {}
     announced::<Doc>();
     announced::<Leaf>();
-    announced::<Wrap>();
 }
 
-/// Paths that announce would reject, taken through the derive's own announcement and back: `super::`,
-/// a module-relative path, a const array length, a qualified path and a bounded parameter. The walk below only
-/// works if the visitor sees each one as written. The bounds are resolvable paths, because the
-/// visitor's own items repeat them in `mod v` — the rule for every node, announced or not.
 /// A leaf of its own: a type belongs to one `define_visit!` only.
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 pub struct Twig {
     pub n: u32,
 }
 
+/// Absolute paths of every kind, taken through the announcement: a qualified path, a const array
+/// length and bounded parameters. The walk below only works if the visitor sees each one as
+/// written.
 pub mod paths {
-    use visiting::Visiting;
 
     pub const N: usize = 2;
     pub trait Has {
@@ -87,7 +66,7 @@ pub mod paths {
         type Out = u8;
     }
 
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     #[visiting(crate::Twig)]
     pub struct List<T>
     where
@@ -105,7 +84,7 @@ pub mod paths {
 }
 
 #[test]
-fn relative_paths_survive_the_announcement() {
+fn absolute_paths_reach_the_visitor() {
     use paths::List;
     let leaf = |n| Twig { n };
     let l: List<()> = List {

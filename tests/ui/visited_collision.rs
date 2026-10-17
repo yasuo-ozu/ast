@@ -5,16 +5,14 @@
 use core::marker::PhantomData;
 
 mod a {
-    use visiting::Visiting;
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     pub enum Foo<S> {
         A(::core::marker::PhantomData<S>),
     }
 }
 
 mod b {
-    use visiting::Visiting;
-    #[derive(Visiting)]
+    #[announce::announce(visiting::visiting)]
     pub enum Foo<S> {
         B(::core::marker::PhantomData<S>),
     }

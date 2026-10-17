@@ -1,14 +1,13 @@
 //! `#[seq]` on a field whose element type is not a visited type — the marker would route nowhere and
 //! silently no-op. Clean error instead of silent drop (previously surfaced only as a later E0407).
 use core::marker::PhantomData;
-use visiting::Visiting;
 
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 pub enum Leaf<S> {
     A(::core::marker::PhantomData<S>),
 }
 
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 #[visiting(crate::Leaf)]
 pub struct Wrap<S> {
     #[seq]

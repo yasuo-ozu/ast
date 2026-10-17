@@ -1,18 +1,18 @@
 error: `crate::Qubit<S>` is handed to `Brackets`'s type parameter `T`, which `Brackets` holds but the walk cannot descend through — a bare type parameter is never a visited head, so those nodes are unreachable however the visitor is written. Give `Brackets` a field of the concrete type instead of `T`, or list the instantiated node and reach it from there
-  --> tests/ui/generic_element.rs:21:12
+  --> tests/ui/generic_element.rs:20:12
    |
-21 |     pub b: crate::Brackets<crate::Qubit<S>, S>,
+20 |     pub b: crate::Brackets<crate::Qubit<S>, S>,
    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ...
-25 |     visiting::define_visit!(crate::Qubit, crate::Brackets, crate::Stmt);
+24 |     visiting::define_visit!(crate::Qubit, crate::Brackets, crate::Stmt);
    |     ------------------------------------------------------------------- in this macro invocation
    |
    = note: this error originates in the macro `crate::Stmt` which comes from the expansion of the macro `visiting::define_visit` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 warning: use of deprecated struct `_::unmatched_visiting_entry_Qubit`: `visiting(..)` entry `Qubit` matches no field of `Brackets`, so nothing is ever walked through it. Remove the entry, or correct its path to the type a field actually names (a field's head is matched by last path segment, so an alias or a type parameter does not match).
-  --> tests/ui/generic_element.rs:12:19
+  --> tests/ui/generic_element.rs:11:19
    |
-12 | #[visiting(crate::Qubit)]
+11 | #[visiting(crate::Qubit)]
    |                   ^^^^^
    |
    = note: `#[warn(deprecated)]` on by default

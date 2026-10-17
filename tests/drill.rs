@@ -5,18 +5,20 @@
 // Drill through a single unlisted intermediate (`Cast`) to reach a visited `Type`.
 mod basic {
     use core::marker::PhantomData;
-    use visiting::Visiting;
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub enum Type<S> {
         Unit(::core::marker::PhantomData<S>),
     }
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::basic::Type)]
     pub struct Cast<S>(pub crate::basic::Type<S>);
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::basic::Cast)]
     pub enum Expr<S> {
         Cast(crate::basic::Cast<S>),
@@ -81,23 +83,26 @@ mod basic {
 // A chain of unlisted intermediates, drilling inside containers, and a finite dead-end.
 mod chain {
     use core::marker::PhantomData;
-    use visiting::Visiting;
 
     // Chain: Expr -> Wrap -> Cast -> Type
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub enum Type<S> {
         Unit(::core::marker::PhantomData<S>),
     }
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::chain::Type)]
     pub struct Cast<S>(pub crate::chain::Type<S>);
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::chain::Cast)]
     pub struct Wrap<S>(pub crate::chain::Cast<S>);
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::chain::Wrap)]
     pub enum Expr<S> {
         W(crate::chain::Wrap<S>),
@@ -116,16 +121,19 @@ mod chain {
         assert_eq!(types, 1, "reached Type through Wrap -> Cast");
     }
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub enum Leaf<S> {
         U(::core::marker::PhantomData<S>),
     }
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::chain::Leaf)]
     pub struct Item<S>(pub crate::chain::Leaf<S>);
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::chain::Item)]
     pub struct Block<S> {
         pub items: ::std::vec::Vec<crate::chain::Item<S>>,
@@ -151,10 +159,12 @@ mod chain {
     }
 
     // Finite dead-end: an unlisted intermediate reaching no visited type — a no-op, not an error.
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub struct Dead<S>(pub i64, pub ::core::marker::PhantomData<S>);
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::chain::Dead)]
     pub enum ExprD<S> {
         D(crate::chain::Dead<S>),
@@ -180,11 +190,10 @@ mod chain {
 // Regression fixes: aliased #[visiting] on a visited type, a user type named `Option`, Box<Option<T>>.
 mod fixes {
     use core::marker::PhantomData;
-    use visiting::Visiting;
 
     mod other {
-        use visiting::Visiting;
-        #[derive(Debug, Visiting)]
+        #[announce::announce(visiting::visiting)]
+        #[derive(Debug)]
         pub enum Real<S> {
             U(::core::marker::PhantomData<S>),
         }
@@ -193,7 +202,8 @@ mod fixes {
     use other::Real;
     use other::Real as Aliased;
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::fixes::other::Real as Aliased)]
     pub enum Expr<S> {
         R(crate::fixes::Aliased<S>),
@@ -215,20 +225,22 @@ mod fixes {
         );
     }
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub enum Leaf<S> {
         U(::core::marker::PhantomData<S>),
     }
 
     mod weird {
-        use visiting::Visiting;
         // A user type whose name collides with the `Option` container keyword.
-        #[derive(Debug, Visiting)]
+        #[announce::announce(visiting::visiting)]
+        #[derive(Debug)]
         #[visiting(crate::fixes::Leaf)]
         pub struct Option<S>(pub crate::fixes::Leaf<S>);
     }
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::fixes::weird::Option)]
     pub enum Outer<S> {
         O(crate::fixes::weird::Option<S>),
@@ -252,12 +264,14 @@ mod fixes {
 
     // A distinct leaf type, since two visitors over the same type in one crate would emit
     // duplicate inherent `visit`/`visit_mut`.
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub enum LeafB<S> {
         U(::core::marker::PhantomData<S>),
     }
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::fixes::LeafB)]
     pub struct Holder<S> {
         pub boxed_opt: ::std::boxed::Box<::core::option::Option<crate::fixes::LeafB<S>>>,
@@ -305,23 +319,23 @@ mod fixes {
 // Two same-last-segment intermediates (`a::Cast`/`b::Cast`) fetched distinctly by full path.
 mod paths {
     use core::marker::PhantomData;
-    use visiting::Visiting;
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     pub enum Type<S> {
         Unit(::core::marker::PhantomData<S>),
     }
 
     pub mod a {
-        use visiting::Visiting;
-        #[derive(Debug, Visiting)]
+        #[announce::announce(visiting::visiting)]
+        #[derive(Debug)]
         #[visiting(crate::paths::Type)]
         pub struct Cast<S>(pub crate::paths::Type<S>);
     }
 
     pub mod b {
-        use visiting::Visiting;
-        #[derive(Debug, Visiting)]
+        #[announce::announce(visiting::visiting)]
+        #[derive(Debug)]
         #[visiting(crate::paths::Type)]
         pub struct Cast<S>(pub crate::paths::Type<S>);
     }
@@ -329,7 +343,8 @@ mod paths {
     use a::Cast;
     use b::Cast as BCast;
 
-    #[derive(Debug, Visiting)]
+    #[announce::announce(visiting::visiting)]
+    #[derive(Debug)]
     #[visiting(crate::paths::a::Cast, crate::paths::b::Cast as BCast)]
     pub enum Expr<S> {
         A(crate::paths::a::Cast<S>),

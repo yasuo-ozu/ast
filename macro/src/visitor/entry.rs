@@ -148,9 +148,8 @@ impl Parse for SubEntry {
 /// Read a `visiting(..)` META list — a node's follow-list as it rides in an `announce` trampoline.
 ///
 /// The list is a `#[visiting(..)]` argument list, so it is parsed with the attribute's own parser
-/// and each entry reduced to its matchkey. Two producers write it: our derive, which has already
-/// resolved every entry (`$crate::Expr as Expr`), and a `visiting(..)` check on an `#[announce]`d
-/// type, which records whatever the definer wrote — a bare path, or `path as Alias`. A `crate = ..`
+/// and each entry reduced to its matchkey. The `visiting(..)` check on an `#[announce]`d type writes
+/// it, recording whatever the definer wrote — a path, or `path as Alias`. A `crate = ..`
 /// item names the facade the *defining* crate's impls reach us through and means nothing here, so
 /// it is dropped.
 pub(crate) fn parse_follow_meta(ts: TokenStream) -> Result<Vec<SubEntry>> {
@@ -169,8 +168,7 @@ pub(crate) fn parse_follow_meta(ts: TokenStream) -> Result<Vec<SubEntry>> {
 ///
 /// A definition fetched from an `announce` trampoline still carries it: the check that declared the
 /// node owns the attribute name, so announce strips it from the item it emits but keeps it in the
-/// payload — here. Our own derive strips it instead and renders the list into META, so only one of
-/// the two ever has entries. Parsing only: the definition was validated where it was written.
+/// payload — here. Parsing only: the definition was validated where it was written.
 pub(crate) fn parse_follow_attrs(item: &Item) -> Result<Vec<SubEntry>> {
     let attrs: &[Attribute] = match item {
         Item::Struct(s) => &s.attrs,

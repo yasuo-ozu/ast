@@ -6,23 +6,22 @@
 #![allow(dead_code)]
 
 use core::marker::PhantomData;
-use visiting::Visiting;
 
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 pub enum Type<S> {
     U(::core::marker::PhantomData<S>),
 }
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 #[visiting(crate::Type)]
 pub struct Expr<S> {
     pub t: crate::Type<S>,
 }
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 #[visiting(crate::Expr)]
 pub struct Stmt<S> {
     pub e: crate::Expr<S>,
 }
-#[derive(Visiting)]
+#[announce::announce(visiting::visiting)]
 #[visiting(crate::Stmt)]
 pub struct Item<S> {
     pub s: crate::Stmt<S>,

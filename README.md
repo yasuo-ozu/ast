@@ -162,6 +162,29 @@ consuming crate; that is announce's own rule. A type that derives `Visiting` mus
 check — the derive would never see its attributes — and rustc says so: both sides implement the
 marker, which is a conflicting-implementations error.
 
+## Derived nodes are announced
+
+`#[derive(Visiting)]` announces the node itself, through announce: the type implements
+`announce::Announce`, and its trampoline is announce's. announce accepts absolute paths only, so the
+derive roots the other paths of the payload at `::__visiting_rel::..` and `define_visit!` takes the
+root off; any other reader sees paths that resolve nowhere.
+
+A node that another reader needs announced as well — a `#[coinduction]` module exports a type by
+announcing it — writes `#[announce]` above the derive, and keeps one trampoline:
+
+```rust,ignore
+#[announce::announce]
+#[derive(Visiting)]
+#[visiting(crate::Leaf)]
+pub struct Boxed<T>(pub ::core::option::Option<::std::boxed::Box<T>>);
+```
+
+The derive leaves the trampoline to that announcement, which carries the follow-list and the field
+markers in its payload, and checks the item's paths as for any announced item. A
+`#[derive(Announce)]` works the same if it is an attribute of its own below the derive and not next
+to it: the derive cannot see one in its own list, and rustfmt merges adjacent derives into one. This
+needs the merging of announcements in announce's `merge-announcements` branch.
+
 ## License
 
 MIT.

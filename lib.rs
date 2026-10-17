@@ -23,8 +23,8 @@
 //!
 //! A node has to be declared where it is defined, which is a problem for a type in a crate that has
 //! never heard of this one. [`announce`] already solves half of it — it publishes a definition's
-//! tokens for any crate to read — and this crate's metadata now speaks announce's protocol, so a
-//! walk can fetch an announced definition. The other half is the declaration — the [`Visiting`]
+//! tokens for any crate to read — and the derive announces each node through it, so a walk fetches
+//! a derived and an announced definition the same way. The other half is the declaration — the [`Visiting`]
 //! marker, which only the defining crate may implement, and the attributes a node is written with,
 //! which rustc rejects where no derive declares them. [`visiting`](macro@crate::visiting) is that
 //! half: a check handed to `#[announce]`, expanded beside the definition, owning the attributes.
@@ -51,6 +51,8 @@ pub mod visit {
     pub use super::{
         define_visit, walk, Elements, OptEdit, OptView, Repeater, SeqEdit, SeqView, Visiting,
     };
+    // The derive announces each node through `announce`; its generated code names the crate here.
+    pub use announce as __announce;
 }
 
 /// Marks a type as an AST node and emits the metadata [`define_visit!`] reads.
@@ -106,6 +108,22 @@ pub mod visit {
 ///     Lit(PhantomData<S>),
 /// }
 /// ```
+///
+/// # Announced
+///
+/// The derive announces the node with [`announce`](https://docs.rs/announce): the trampoline under
+/// the type's name is announce's, and the type implements `announce::Announce`. A node needs no
+/// dependency on announce for that. announce takes absolute paths only, so the payload roots every
+/// other path at `::__visiting_rel::..`, which `define_visit!` takes off again. Another announce
+/// consumer reads those paths as they are, and they resolve nowhere.
+///
+/// A type that is also announced for another reader — `#[announce]`, `#[derive(Announce)]` — keeps
+/// one trampoline: the derive leaves it to that announcement, whose payload carries the follow-list
+/// and the field markers. That announcement checks the item's paths as announce does for any item.
+/// Write `#[announce]` above the derive. A `#[derive(Announce)]` has to be an attribute of its own
+/// below the derive and not next to it: the derive cannot see one in its own `#[derive(..)]` list,
+/// and rustfmt merges adjacent derives into one. A `macro_name` renames the only trampoline, which
+/// `define_visit!` then does not find.
 pub use visiting_macro::Visiting;
 
 /// Declare a node from an [`announce`] definition, with no derive of ours.

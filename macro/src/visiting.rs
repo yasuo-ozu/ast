@@ -1,5 +1,5 @@
-use crate::util::{angle, data_field_iter, for_each_type_path, gargs, gparams, to_snake};
-use proc_macro2::{Literal, Span, TokenStream};
+use crate::util::{angle, data_field_iter, for_each_type_path, gargs, gparams};
+use proc_macro2::{Literal, TokenStream};
 use proc_macro_error3::{abort, emit_error};
 use std::collections::{HashMap, HashSet};
 use syn::parse::{Parse, ParseStream, Parser};
@@ -36,38 +36,6 @@ impl SubastEntry {
         self.alias
             .clone()
             .unwrap_or_else(|| self.path.segments.last().unwrap().ident.clone())
-    }
-}
-
-/// Render a `#[visiting(..)]` allowlist as the `@subast { path as key, … }` token list carried in a
-/// metadata macro: each entry's path is `$crate`-rooted (so it resolves downstream, exactly as
-/// `derive_visiting`) and paired with its matchkey.
-pub(crate) fn subast_tokens(entries: &[SubastEntry]) -> Vec<TokenStream> {
-    entries
-        .iter()
-        .map(|e| {
-            let path = crate_rooted_tokens(&e.path);
-            let key = e.matchkey();
-            quote!( #path as #key )
-        })
-        .collect()
-}
-
-/// Re-root a `crate::…` path at `$crate::…` for emission inside the `#[macro_export]` metadata
-/// macro, so the path resolves to *this* (the defining) crate even when the metadata macro is
-/// expanded in a downstream crate building a visitor that drills through these types. Non-`crate`
-/// paths (`::abs`, `super`, `self`, bare) are emitted verbatim (only `crate`-rooted paths are
-/// downstream-portable — the recommended canonical form).
-pub(crate) fn crate_rooted_tokens(path: &Path) -> TokenStream {
-    let rooted = path.leading_colon.is_none()
-        && path.segments.first().map_or(false, |s| {
-            s.ident == "crate" && matches!(s.arguments, PathArguments::None)
-        });
-    if rooted {
-        let rest: Vec<&PathSegment> = path.segments.iter().skip(1).collect();
-        quote!( $crate #(:: #rest)* )
-    } else {
-        quote!( #path )
     }
 }
 
@@ -355,11 +323,11 @@ fn for_each_field_type_of(data: &Data, f: &mut dyn FnMut(&Type)) {
 /// * one `impl Repeater<N> for T<..>` per context-dependent field type, so it can be named
 ///   portably as `<T<..> as Repeater<N>>::Type` (external-metadata fallback; the visitor/drill path
 ///   uses `#[visiting]`-resolved paths),
-/// * a `#[macro_export]` callback metadata `macro_rules!` carrying a cleaned copy of the definition
-///   plus the `#[visiting]` allowlist, and
-/// * a macro-namespace re-export under the type's own name so a generated visitor can reach it as
-///   `path::to::T! { .. }`.
-pub fn derive_visiting(input: &DeriveInput, nonce: u64) -> TokenStream {
+/// * the announcement of the node — announce's trampoline under the type's own name, carrying a
+///   cleaned copy of the definition and the `#[visiting]` allowlist, so a generated visitor reaches it
+///   as `path::to::T! { .. }`, and `impl Announce for T<..>` — unless another announcement of the item
+///   makes them (see [`announce_node`]).
+pub fn derive_visiting(input: &DeriveInput) -> TokenStream {
     let ident = &input.ident;
     let (_, _, where_clause) = input.generics.split_for_impl();
 
@@ -382,14 +350,6 @@ pub fn derive_visiting(input: &DeriveInput, nonce: u64) -> TokenStream {
     // that re-exports this crate, which is what a grammar depending only on that facade needs;
     // otherwise the impls read `::visiting::..`.
     let root = &attr.krate.unwrap_or_else(|| parse_quote!(::visiting));
-
-    let subast_entry_tokens = subast_tokens(&subast);
-
-    let cleaned = cleaned_definition(input);
-    let macro_name = Ident::new(
-        &format!("__{}_ast_{}", to_snake(ident), nonce),
-        Span::call_site(),
-    );
 
     // type-leak: one `Repeater<N>` impl **on the AST type itself** per context-dependent field type
     // (`<T as Repeater<N>>::Type` names that type portably from another crate). No separate leaker
@@ -419,6 +379,14 @@ pub fn derive_visiting(input: &DeriveInput, nonce: u64) -> TokenStream {
 
     let marker = node_marker(input, &subast, root);
 
+    // Another announcement of this item makes the trampoline, and a visitor reads the follow-list
+    // and the field markers from its payload instead. A second trampoline would take the same name.
+    let trampoline = if announced_elsewhere(&input.attrs) {
+        quote!()
+    } else {
+        announce_node(input, root, &subast)
+    };
+
     quote! {
         #marker
 
@@ -426,34 +394,85 @@ pub fn derive_visiting(input: &DeriveInput, nonce: u64) -> TokenStream {
 
         #repeater_items
 
-        // The cleaned definition / `#[visiting]` paths embedded below may contain `crate::`-rooted paths
-        // the user wrote; those resolve in *this* (defining) crate by design (downstream-portable paths
-        // are `$crate`-rooted via `crate_rooted_tokens`). Suppress clippy's `crate_in_macro_def` for the
-        // generated callback macro so it never surfaces in a consumer's lint output.
-        #[allow(clippy::crate_in_macro_def)]
-        #[macro_export]
-        #[doc(hidden)]
-        macro_rules! #macro_name {
-            // An `announce` trampoline: hand this definition to the callback, with the follow-list
-            // in announce's META slot. The list is `[Self!, callback!]` at every site this crate
-            // emits, so it is matched opaquely; a longer chain would need the usual pop-and-forward.
-            // The continuation list is matched as one `tt` — destructuring "everything, then the
-            // last element" is ambiguous in macro_rules — so the callback is named again behind
-            // `@state`, which is also where our own state rides. An `#[announce]`d type ignores all
-            // of that: announce reads the list itself and passes `@state ..` through as its REST.
-            ($_list:tt @state $cb:path { $($pre:tt)* }) => {
-                $cb ! {
-                    [$cb !]
-                    #ident ! => [ visiting ( #(#subast_entry_tokens),* ) ]
-                    { #cleaned }
-                    @state $cb { $($pre)* }
-                }
-            };
-        }
-
-        #[doc(hidden)]
-        #{ &input.vis } use #macro_name as #ident;
+        #trampoline
     }
+}
+
+/// The trampoline and the `Announce` impl that `#[derive(Announce)]` would write, through announce
+/// itself, so that a visitor and any other announce consumer read the node the same way.
+///
+/// The payload is the cleaned definition with its relative paths marked (see [`crate::relative`]),
+/// and the follow-list rides in META as `visiting(..)`, where announce re-roots its `crate::` paths at
+/// `$crate::`. announce is reached through the crate's own re-export, `#root::visit::__announce`, so a node
+/// needs no dependency on it.
+fn announce_node(input: &DeriveInput, root: &Path, subast: &[SubastEntry]) -> TokenStream {
+    let mut item = cleaned_definition(input);
+    // announce re-exports the trampoline at the item's visibility.
+    item.vis = input.vis.clone();
+    crate::relative::mark(&mut item);
+    let entries = subast.iter().map(|e| {
+        let (path, key) = (&e.path, e.matchkey());
+        quote!( #path as #key )
+    });
+    let opts: announce_core::Options = match syn::parse2(quote! {
+        crate = #root::visit::__announce,
+        meta = visiting( #(#entries),* )
+    }) {
+        Ok(opts) => opts,
+        Err(e) => return e.to_compile_error(),
+    };
+    let out = match announce_core::derive_announce_with(opts, quote!(#item)) {
+        Ok(out) => out,
+        Err(e) => return e.to_compile_error(),
+    };
+    // The `Announce` impl repeats the item's generics and where-clause, and unlike the payload it is
+    // compiled here, so its paths are put back as written. The trampoline keeps the marked copy.
+    match syn::parse2::<File>(out.clone()) {
+        Ok(mut file) => {
+            for it in &mut file.items {
+                if let Item::Impl(_) = it {
+                    crate::relative::unmark(it);
+                }
+            }
+            quote!(#file)
+        }
+        Err(_) => out,
+    }
+}
+
+/// Whether an attribute left on the item announces it: an `#[announce]` below the derive (any
+/// path, since this derive owns no `announce` helper), one that has already moved below the other
+/// attributes (it carries announce's `__announce_deferred` mark, also under a renamed import), or a
+/// `#[derive(Announce)]`. The same signs announce's own derive stands aside for.
+fn announced_elsewhere(attrs: &[Attribute]) -> bool {
+    fn carries_mark(ts: TokenStream) -> bool {
+        ts.into_iter().any(|tt| match tt {
+            proc_macro2::TokenTree::Ident(i) => i == "__announce_deferred",
+            proc_macro2::TokenTree::Group(g) => carries_mark(g.stream()),
+            _ => false,
+        })
+    }
+    attrs.iter().any(|a| {
+        let last = match a.path().segments.last() {
+            Some(s) => &s.ident,
+            None => return false,
+        };
+        if last == "announce" {
+            return true;
+        }
+        if last == "derive" {
+            return a
+                .parse_args_with(Punctuated::<Path, Token![,]>::parse_terminated)
+                .map_or(false, |ps| {
+                    ps.iter()
+                        .any(|p| p.segments.last().map_or(false, |s| s.ident == "Announce"))
+                });
+        }
+        match &a.meta {
+            Meta::List(l) => carries_mark(l.tokens.clone()),
+            _ => false,
+        }
+    })
 }
 
 /// A path with its generic arguments stripped, as a comparable spelling (`Vec<Box<T>>` → `Vec`).

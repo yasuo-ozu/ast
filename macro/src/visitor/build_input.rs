@@ -761,7 +761,9 @@ fn parse_callback_or_state(input: TokenStream) -> syn::Result<BuildInput> {
         if let Ok(state_ts) = unwrap_state(ann.rest.clone()) {
             let mut st: BuildInput = syn::parse2(state_ts)?;
             if let Some(entry) = ann.entries.first() {
-                let def = entry.item()?;
+                let mut def = entry.item()?;
+                // Our derive roots the definition's relative paths for announce; take that off.
+                crate::relative::unmark(&mut def);
                 // The follow-list arrives by either of two routes, and a node may use both.
                 // `visiting(..)` in META is what our derive renders (resolved) and what a definer
                 // wrote in the check's arguments — `find_meta` compares last segments, so the

@@ -8,6 +8,7 @@ use proc_macro::TokenStream as TokenStream1;
 use proc_macro_error3::proc_macro_error;
 use syn::*;
 
+mod relative;
 mod util;
 mod visiting;
 mod visitor;
@@ -26,7 +27,7 @@ fn random() -> u64 {
 #[proc_macro_derive(Visiting, attributes(visiting, seq, opt, skip))]
 pub fn derive_visiting(input: TokenStream1) -> TokenStream1 {
     let input: DeriveInput = parse_macro_input!(input);
-    crate::visiting::derive_visiting(&input, random()).into()
+    crate::visiting::derive_visiting(&input).into()
 }
 
 /// Declare a node from an `#[announce]` definition, and own the attributes that go inside it.

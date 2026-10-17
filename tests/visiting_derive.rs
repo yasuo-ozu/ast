@@ -1,5 +1,5 @@
-//! Stage 2: `#[derive(Visiting)]` emits the marker impl, the metadata callback macro, and the
-//! macro-namespace re-export under the type's own name.
+//! Stage 2: `#[derive(Visiting)]` emits the marker impl and announces the node: announce's trampoline
+//! under the type's own name, in the macro namespace, and the `Announce` impl.
 
 use core::marker::PhantomData;
 use visiting::Visiting;
@@ -57,25 +57,30 @@ fn repeater_is_implemented_on_the_type_itself() {
 
 #[test]
 fn metadata_macro_round_trips_definition() {
-    // A local callback in announce's shape, which receives the definition and re-parses the embedded
-    // definition into a real (renamed) type, proving the metadata macro carries a syn-parseable
-    // copy of the original definition and that the path-callback invocation works.
+    // A local callback in announce's shape, which receives the definition. The forwarded tokens
+    // parse as a single item, and the path-callback invocation works.
     macro_rules! rebuild {
         ([$($cb:tt)*] $($p:ident)::+ ! => [$($meta:tt)*] { $item:item } @state $_c:path { }) => {
-            // The forwarded tokens parse as a single item; re-emit it in a fresh module so it does
-            // not clash with the original `Expr`.
-            #[allow(dead_code)]
-            mod rebuilt {
-                use super::*;
-                $item
-            }
+            const PAYLOAD: &str = stringify!($item);
         };
     }
 
-    // `Expr!` resolves to the re-exported metadata macro (macro namespace), distinct from the
-    // `Expr` enum (type namespace).
+    // `Expr!` resolves to the re-exported trampoline (macro namespace), distinct from the `Expr`
+    // enum (type namespace).
     Expr! { [Expr!, rebuild!] @state rebuild { } }
-    let _ = rebuilt::Expr::Other(PhantomData::<()>);
+    let payload: String = PAYLOAD.split_whitespace().collect();
+    // announce takes absolute paths only, so the relative ones ride rooted at `::__visiting_rel`,
+    // which a visitor takes off again; what is already absolute is left alone.
+    assert!(payload.contains("::__visiting_rel::Box<::__visiting_rel::Stmt<::__visiting_rel::S>>"));
+    assert!(payload.contains("::__visiting_rel::PhantomData<::__visiting_rel::S>"));
+}
+
+#[test]
+fn derive_announces_the_node() {
+    // The trampoline is announce's own, so the node is `Announce` like any announced item.
+    fn announced<T: announce::Announce>() {}
+    announced::<Expr<()>>();
+    announced::<Outer<()>>();
 }
 
 #[test]

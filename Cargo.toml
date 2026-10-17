@@ -28,10 +28,19 @@ version_check = "0.9"
 
 [dependencies]
 visiting-macro = { path = "macro", version = "0.2.0" }
+# The derive announces each node, and the code announce writes names it through `visit::__announce`.
+# Only `Announce` and announce's hidden runtime are needed, so its proc-macro API stays off.
+announce = { version = "0.1.1", default-features = false }
 
 [dev-dependencies]
 trybuild = "1.0"
-# Tests only: the generated code never names `announce`, and a consumer needs no dependency on it.
-# `announce-core` is a dependency of the macro crate, which is what parses the protocol.
-announce = "0.1.0"
+# The tests write `#[announce]` themselves, which needs the default features.
+announce = "0.1.1"
 visiting-foreign-fixture = { path = "tests/foreign" }
+
+# Several announcements of one item merge only on announce's `merge-announcements` branch, which a
+# node deriving `Visiting` and also carrying `#[announce]` relies on. Drop this once it is released.
+[patch.crates-io]
+announce = { git = "https://github.com/yasuo-ozu/announce", branch = "merge-announcements" }
+announce-core = { git = "https://github.com/yasuo-ozu/announce", branch = "merge-announcements" }
+announce-macros = { git = "https://github.com/yasuo-ozu/announce", branch = "merge-announcements" }

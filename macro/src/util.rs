@@ -485,6 +485,12 @@ pub(crate) fn absolutize(wrote: &Path, owner: &Path) -> Option<Path> {
     let first = segs.first()?;
     let out: Vec<Ident> = if first == "crate" {
         segs
+    } else if first == "$crate" {
+        // An announced payload names the defining crate `$crate`; fold it as `check_generic_element`
+        // does, so it meets the `crate::` spelling of `define_visit!(..)`.
+        std::iter::once(Ident::new("crate", first.span()))
+            .chain(segs[1..].iter().cloned())
+            .collect()
     } else if first == "self" {
         module
             .into_iter()

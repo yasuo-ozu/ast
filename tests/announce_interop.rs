@@ -13,7 +13,7 @@
 
 /// A leaf: no follow-list, so the check takes no arguments. The bare path form,
 /// `#[announce(visiting::visiting)]`, means the same.
-#[announce::announce(visiting::visiting())]
+#[visiting::visiting]
 #[derive(Debug)]
 pub struct Leaf {
     pub n: u32,
@@ -22,7 +22,7 @@ pub struct Leaf {
 /// A node that reaches `Leaf`. The follow-list is passed to the check instead of `#[visiting(..)]`,
 /// and the attributes the announced item does carry (a derive, a doc comment) ride along without
 /// disturbing the walk.
-#[announce::announce(visiting::visiting(crate::Leaf))]
+#[visiting::visiting(crate::Leaf)]
 #[derive(Debug)]
 pub struct Doc {
     /// The leaf.
@@ -57,7 +57,7 @@ fn every_node_is_announced() {
 ///
 /// `crate = ..` names the crate that code reaches us through — the facade form, spelled here as this
 /// crate itself, which is what it would have said anyway.
-#[announce::announce(visiting::visiting(crate = ::visiting, crate::Leaf))]
+#[visiting::visiting(crate = ::visiting, crate::Leaf)]
 // One bound inline and one in the where-clause: the follow-list assertion the check writes repeats
 // both, so it holds under exactly the conditions the node exists under.
 pub struct Wrapper<T: ::core::clone::Clone, U>
@@ -80,13 +80,13 @@ fn a_generic_node_is_announced_too() {
 ///
 /// Written in the bare-path form, with no argument list at all — a check announce invokes as
 /// `visiting! { (), ITEM }`.
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub struct Twig {
     pub n: u32,
 }
 
 /// A node with a follow-list in `#[visiting(..)]`, reaching one with none.
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Twig)]
 pub struct Branch {
     pub twig: crate::Twig,

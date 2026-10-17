@@ -4,7 +4,7 @@
 
 pub struct Plain<S>(S);
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Plain)]
 pub struct Node<S> {
     pub p: crate::Plain<S>,

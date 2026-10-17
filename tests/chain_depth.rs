@@ -9,26 +9,26 @@ use core::marker::PhantomData;
 mod deep {
     use super::*;
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     pub enum A<S> {
         X(::core::marker::PhantomData<S>),
     }
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::deep::A)]
     pub struct B<S> {
         pub a: crate::deep::A<S>,
     }
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::deep::B)]
     pub struct C<S> {
         pub b: crate::deep::B<S>,
     }
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::deep::C)]
     pub struct D<S> {
         pub c: crate::deep::C<S>,
     }
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::deep::D)]
     pub struct E<S> {
         pub d: crate::deep::D<S>,
@@ -108,17 +108,17 @@ mod deep {
 mod widened {
     use super::*;
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     pub enum Type<S> {
         U(::core::marker::PhantomData<S>),
     }
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::widened::Type)]
     pub struct Expr<S> {
         pub t: crate::widened::Type<S>,
     }
     // The extender carries a parameter its ancestors never had.
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::widened::Expr)]
     pub struct Item<S, T> {
         pub e: crate::widened::Expr<S>,

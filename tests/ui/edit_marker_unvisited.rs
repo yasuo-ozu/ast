@@ -2,12 +2,12 @@
 //! silently no-op. Clean error instead of silent drop (previously surfaced only as a later E0407).
 use core::marker::PhantomData;
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub enum Leaf<S> {
     A(::core::marker::PhantomData<S>),
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Leaf)]
 pub struct Wrap<S> {
     #[seq]

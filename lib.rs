@@ -7,8 +7,8 @@
 //!
 //! # What lives here
 //!
-//! `#[announce(visiting::visiting)]` and `define_visit!` write their code into *your* crate. This
-//! crate holds the pieces that code calls into. You rarely name them yourself:
+//! `#[visiting]` and `define_visit!` write their code into *your* crate. This crate holds the pieces
+//! that code calls into. You rarely name them yourself:
 //!
 //! * [`SeqView`]/[`SeqEdit`] and [`OptView`]/[`OptEdit`] — the slot views a `#[seq]`/`#[opt]`
 //!   method is handed, plus [`Elements`] for iterating one. You *do* name these, in an override.
@@ -19,15 +19,18 @@
 //!
 //! A visitor is built from the definitions of its nodes, wherever they live — another module, or a
 //! crate that has never heard of this one. [`announce`] publishes a definition's tokens for any
-//! crate to read, so a node is an announced type, and [`visiting`](macro@crate::visiting) is the
-//! check handed to its `#[announce]`: expanded beside the definition, owning the attributes a node
-//! is written with.
+//! crate to read, so a node is an announced type. [`#[visiting]`](macro@crate::visiting) writes the
+//! announcement, with a check expanded beside the definition that owns the attributes a node is
+//! written with.
 //!
 //! [`announce`]: https://docs.rs/announce
 
 #[doc(hidden)]
 pub mod _imp {
     pub use visiting_macro;
+    // The check `#[visiting]` hands to `#[announce]`. It keeps the name `visiting`, which is what
+    // a visitor looks for in the trampoline's META.
+    pub use visiting_macro::visiting_check as visiting;
 }
 
 /// The crate's own items, under the name the generated code reaches them by.
@@ -47,18 +50,19 @@ pub mod visit {
     pub use announce as __announce;
 }
 
-/// Declare a node: a check handed to [`announce`]'s `#[announce]`.
+/// Declare a node.
 ///
-/// A visitor is built from its nodes' definitions, which `announce` publishes for any crate to read.
-/// This check is invoked beside the definition, and owns the attributes a node is written with:
+/// A visitor is built from its nodes' definitions, which [`announce`] publishes for any crate to
+/// read. `#[visiting]` writes the node's `#[announce]`, with a check that runs beside the
+/// definition and owns the attributes a node is written with:
 ///
 /// ```
-/// #[announce::announce(visiting::visiting)]
+/// #[visiting::visiting]
 /// pub struct Leaf {
 ///     pub n: u32,
 /// }
 ///
-/// #[announce::announce(visiting::visiting)]
+/// #[visiting::visiting]
 /// #[visiting(crate::Leaf)]
 /// pub struct Doc {
 ///     #[seq]
@@ -82,7 +86,8 @@ pub mod visit {
 /// }
 /// ```
 ///
-/// A node's crate depends on `announce`, of the version this crate uses.
+/// A node's crate needs no dependency on `announce`: the attribute reaches it through this crate.
+/// Write `#[visiting]` first among the item's attributes.
 ///
 /// # Every path is absolute
 ///
@@ -90,7 +95,8 @@ pub mod visit {
 /// anywhere: `crate::..`, `::std::..`, `::core::..` or `::other_crate::..`. That covers field types,
 /// bounds, array lengths and discriminants. Std's prelude names are relative too, so `Box<Expr>` is
 /// written `::std::boxed::Box<crate::Expr>`. Primitives, `Self`, the type's own parameters and their
-/// associated types (`T::Out`) need nothing. That is announce's rule, for any announced item.
+/// associated types (`T::Out`) need nothing. That is announce's rule, for any announced item; the
+/// attribute reports every path that breaks it, with the absolute form of a std name.
 ///
 /// # Types are matched by their last path segment
 ///
@@ -104,7 +110,7 @@ pub mod visit {
 /// ```ignore
 /// use crate::other::Node as OtherNode;
 ///
-/// #[announce::announce(visiting::visiting)]
+/// #[visiting::visiting]
 /// #[visiting(crate::other::Node as OtherNode)]
 /// pub struct Wrapper {
 ///     inner: crate::OtherNode,
@@ -119,9 +125,10 @@ pub mod visit {
 /// | `#[seq]` / `#[opt]` | a field | reach the parent slot through a [`SeqView`] or [`OptView`]. Plain `Vec<T>` / `Option<T>` only. |
 /// | `#[skip]` | a field | never walk into this field, whatever its type. An error together with `#[seq]` or `#[opt]`. |
 ///
-/// rustc knows none of them, so the check *owns* the four names: `#[announce]` asks it which names it
-/// owns, removes them from the item it emits, and keeps them in the payload a visitor reads.
-/// `#[announce]` has to sit **above** them, since rustc resolves attributes from the top.
+/// rustc knows none of them. `#[visiting(..)]` on the item is folded into the attribute's own
+/// arguments, also when `visiting` is imported and the inner ones would name the attribute too. The
+/// field markers are owned by the check: `#[announce]` removes them from the item it emits, and
+/// keeps them in the payload a visitor reads.
 ///
 /// Take a field's type and remove wrappers like `Box`, `Vec` and `Option`. What is left is the
 /// **head**. The walk goes into a field when the visitor knows its head. It knows a type if you
@@ -134,9 +141,10 @@ pub mod visit {
 /// path, is an error. The path is used again in the module where the visitor lives, where a short
 /// path would mean something else. `define_visit!(..)` has no such rule.
 ///
-/// The follow-list may also be written in the check's own arguments,
-/// `visiting::visiting(crate::Leaf)`, which is where it ends up in the trampoline's metadata. Use
-/// whichever reads better; a node may use both, and `crate = <facade>` goes in either.
+/// The follow-list may be written in the attribute's own arguments, `#[visiting(crate::Leaf)]`, or
+/// in further `#[visiting(..)]` attributes below it, and `crate = <facade>` goes in either. A crate
+/// that reaches this one through a facade names the attribute through it too:
+/// `#[my_crate::visiting(crate = ::my_crate)]`.
 ///
 /// A `#[seq]` or `#[opt]` field must be a plain `Vec<T>` or `Option<T>`. A wrapped one, like
 /// `Option<Box<T>>`, cannot be edited in place. The macro tells you so, instead of building a view
@@ -145,7 +153,7 @@ pub mod visit {
 /// `#[skip]` takes a field out of the walk, whatever its type:
 ///
 /// ```ignore
-/// #[announce::announce(visiting::visiting)]
+/// #[visiting::visiting]
 /// pub enum Expr<S> {
 ///     // A `&mut` walk cannot descend into this field: `&mut Box<Stmt<'static, S>>` is
 ///     // invariant in the lifetime, so there is no way in. Saying so here gives a clear error
@@ -158,9 +166,9 @@ pub mod visit {
 /// # Announced for another reader too
 ///
 /// A node that another reader needs announced as well — a `#[coinduction]` module exports a type by
-/// announcing it — keeps its one `#[announce]`: the announcements of an item merge into one
-/// trampoline, so this check and the other reader's options can share it. A `macro_name` renames
-/// the trampoline, which `define_visit!` then does not find.
+/// announcing it — writes that `#[announce]` too: the announcements of an item merge into one
+/// trampoline, which carries both readers' options. Both must come from the same version of
+/// `announce`. A `macro_name` renames the trampoline, which `define_visit!` then does not find.
 ///
 /// [`announce`]: https://docs.rs/announce
 pub use visiting_macro::visiting;
@@ -181,10 +189,10 @@ pub use visiting_macro::visiting;
 /// Take a `Doc` holding a list of `Item`s:
 ///
 /// ```ignore
-/// #[announce::announce(visiting::visiting)]
+/// #[visiting::visiting]
 /// pub struct Doc { #[seq] items: ::std::vec::Vec<crate::Item> }
 ///
-/// #[announce::announce(visiting::visiting)]
+/// #[visiting::visiting]
 /// pub struct Item(u32);
 ///
 /// pub mod visit { visiting::define_visit!(crate::Doc, crate::Item); }
@@ -239,7 +247,7 @@ pub use visiting_macro::visiting;
 ///
 /// ```
 /// mod grammar {
-///     #[announce::announce(visiting::visiting)]
+///     #[visiting::visiting]
 ///     #[visiting(crate::grammar::Expr)]
 ///     pub enum Expr {
 ///         Lit(u32),
@@ -349,7 +357,7 @@ pub use visiting_macro::visiting;
 /// A tuple holding a visitor is rejected:
 ///
 /// ```compile_fail
-/// #[announce::announce(visiting::visiting)]
+/// #[visiting::visiting]
 /// pub enum Expr { Lit(u32) }
 /// pub mod visit { visiting::define_visit!(crate::Expr); }
 ///
@@ -374,9 +382,9 @@ pub use visiting_macro::visiting;
 /// visitor you already have. Name the base module, then `=>`, then the new types:
 ///
 /// ```ignore
-/// #[announce::announce(visiting::visiting)] pub enum Type<S> { .. }
-/// #[announce::announce(visiting::visiting)] pub enum Expr<S> { Typed(::std::boxed::Box<crate::Type<S>>), .. }
-/// #[announce::announce(visiting::visiting)] pub enum Stmt<S> { E(::std::boxed::Box<crate::Expr<S>>), .. }
+/// #[visiting::visiting] pub enum Type<S> { .. }
+/// #[visiting::visiting] pub enum Expr<S> { Typed(::std::boxed::Box<crate::Type<S>>), .. }
+/// #[visiting::visiting] pub enum Stmt<S> { E(::std::boxed::Box<crate::Expr<S>>), .. }
 ///
 /// pub mod base { visiting::define_visit!(super::Type, super::Expr); }
 /// pub mod ext  { visiting::define_visit!(super::base => super::Stmt); }
@@ -915,7 +923,7 @@ pub mod walk {
         diagnostic::on_unimplemented(
             message = "`{Self}` cannot be walked at `{H}`",
             label = "this field's shape has no `Walk` impl",
-            note = "a visited node needs `#[announce(visiting::visiting)]` and an entry in the owning type's `#[visiting(..)]`; \
+            note = "a visited node needs `#[visiting]` and an entry in the owning type's `#[visiting(..)]`; \
                 a container of one needs a `Walk` impl, which `visiting::visit` has for `Vec`, `VecDeque`, \
                 `Option`, `Box`, maps, slices, arrays and tuples, and which a crate can add for a \
                 container of its own"

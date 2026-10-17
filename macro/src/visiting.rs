@@ -408,10 +408,93 @@ fn item_kind(item: &Item) -> &'static str {
     }
 }
 
-/// `visiting::visiting!` — the node declaration as an `announce` definition-side check.
+/// `#[visiting(..)]` — declare a node: announce it, with the check below.
 ///
-/// `#[announce(visiting::visiting)]` asks announce for three things. It invokes this macro beside
-/// the definition, as `visiting! { (ARGS), ITEM }`. It lets the item carry our attributes —
+/// A derive cannot announce the item it is on, since it cannot change it, so this is an attribute
+/// that writes the `#[announce]`. It takes the follow-list and `crate = ..` as arguments and folds in
+/// any further `#[visiting(..)]` on the item: imported as `visiting`, the attribute would otherwise
+/// run again on each of them. It reports every relative path at once, where announce would stop at
+/// the first. announce and the check are both reached through `#root`, so a node's crate needs no
+/// dependency on announce.
+pub fn attribute(args: TokenStream, item: TokenStream) -> TokenStream {
+    let mut item: Item = match syn::parse2(item) {
+        Ok(i) => i,
+        Err(e) => return e.to_compile_error(),
+    };
+    let kind = item_kind(&item);
+    let attrs = match &mut item {
+        Item::Struct(s) => &mut s.attrs,
+        Item::Enum(e) => &mut e.attrs,
+        other => abort!(
+            other,
+            "`#[visiting]` applies to a struct or an enum; {} cannot be an AST node",
+            kind
+        ),
+    };
+    let mut attr = match VisitingAttribute::parse.parse2(args) {
+        Ok(a) => a,
+        Err(e) => {
+            emit_error!(e.span(), "invalid `#[visiting(..)]`: {}", e);
+            VisitingAttribute::default()
+        }
+    };
+    attr.merge(parse_visiting(attrs));
+    attrs.retain(|a| !a.path().is_ident("visiting"));
+    let di: DeriveInput = match item.clone() {
+        Item::Struct(s) => s.into(),
+        Item::Enum(e) => e.into(),
+        _ => unreachable!(),
+    };
+    if !crate::absolute::check(&di) {
+        // announce would only repeat the first of the errors reported. The item stays, without the
+        // field markers no announcement owns now.
+        strip_markers(&mut item);
+        return quote!(#item);
+    }
+    let root = attr
+        .krate
+        .clone()
+        .unwrap_or_else(|| parse_quote!(::visiting));
+    let krate = attr.krate.iter();
+    let entries = attr.follow.iter().map(|e| {
+        let p = &e.path;
+        match &e.alias {
+            Some(a) => quote!(#p as #a),
+            None => quote!(#p),
+        }
+    });
+    quote! {
+        #[#root::visit::__announce::announce(
+            crate = #root::visit::__announce,
+            #root::_imp::visiting( #(crate = #krate,)* #(#entries),* )
+        )]
+        #item
+    }
+}
+
+/// Remove the `#[seq]`/`#[opt]`/`#[skip]` field markers, which rustc only accepts on an item whose
+/// announcement owns them.
+fn strip_markers(item: &mut Item) {
+    let marker = |a: &Attribute| ["seq", "opt", "skip"].iter().any(|m| a.path().is_ident(m));
+    let fields: Vec<&mut Field> = match item {
+        Item::Struct(s) => s.fields.iter_mut().collect(),
+        Item::Enum(e) => e
+            .variants
+            .iter_mut()
+            .flat_map(|v| v.fields.iter_mut())
+            .collect(),
+        _ => Vec::new(),
+    };
+    for f in fields {
+        f.attrs.retain(|a| !marker(a));
+    }
+}
+
+/// The node declaration as an `announce` definition-side check, which `#[visiting]` hands to the
+/// `#[announce]` it writes.
+///
+/// It asks announce for three things. announce invokes this macro beside the definition, as
+/// `visiting! { (ARGS), ITEM }`. It lets the item carry our attributes —
 /// `#[visiting(..)]`, `#[seq]`, `#[opt]`, `#[skip]` — which this check *owns*: announce strips them
 /// from the item it emits (rustc does not know them) and keeps them in the payload
 /// a visitor reads. And it records the check's own arguments in META, so a follow-list may be

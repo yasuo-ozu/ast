@@ -5,14 +5,14 @@
 use core::marker::PhantomData;
 
 mod a {
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     pub enum Foo<S> {
         A(::core::marker::PhantomData<S>),
     }
 }
 
 mod b {
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     pub enum Foo<S> {
         B(::core::marker::PhantomData<S>),
     }

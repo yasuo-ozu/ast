@@ -8,13 +8,13 @@
 
 mod ast {
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     pub enum Node {
         Leaf(i64),
     }
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     #[visiting(crate::ast::Node)]
     pub struct Tree {
@@ -155,7 +155,7 @@ fn two_edit_passes_run_in_order() {
 // hides an item from rustdoc while leaving it importable.)
 mod glob_import {
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     pub enum Node {
         Leaf(i64),
     }

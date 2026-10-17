@@ -4,17 +4,17 @@
 //! Previously silent: the walk compiled and visited nothing.
 use core::marker::PhantomData;
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub struct Qubit<S>(pub i64, pub ::core::marker::PhantomData<S>);
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Qubit)]
 pub struct Brackets<T, S> {
     pub items: ::std::vec::Vec<T>, // `T` is never a head — this field is a LEAF
     pub tag: ::core::marker::PhantomData<S>,
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Qubit, crate::Brackets)]
 pub struct Stmt<S> {
     pub b: crate::Brackets<crate::Qubit<S>, S>,

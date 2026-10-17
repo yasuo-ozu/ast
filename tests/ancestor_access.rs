@@ -4,24 +4,24 @@
 
 use core::marker::PhantomData;
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub enum Type<S> {
     Unit(::core::marker::PhantomData<S>),
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Type)]
 pub enum Expr<S> {
     T(::std::boxed::Box<crate::Type<S>>),
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Expr)]
 pub enum Stmt<S> {
     E(::std::boxed::Box<crate::Expr<S>>),
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Stmt)]
 pub enum Item<S> {
     S(::std::boxed::Box<crate::Stmt<S>>),

@@ -8,13 +8,13 @@
 
 use visiting::{OptEdit, OptView, SeqEdit, SeqView};
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[derive(Debug, PartialEq)]
 pub enum Leaf {
     N(u32),
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[derive(Debug)]
 pub struct Holder {
     #[seq]
@@ -138,11 +138,11 @@ fn a_marked_field_is_still_walked_element_by_element() {
 mod borrowed_elements {
     use super::*;
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug, PartialEq)]
     pub struct Borrowed<'s>(pub &'s str);
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     #[visiting(crate::borrowed_elements::Borrowed)]
     pub struct Doc<'s> {

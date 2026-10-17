@@ -5,10 +5,10 @@
 // `#[skip]` prunes one field. The walk still enters its siblings, so this is not "stop here".
 mod skip {
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     pub struct Leaf(pub u32);
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::skip::Leaf)]
     pub struct Node {
         pub a: crate::skip::Leaf,
@@ -53,11 +53,11 @@ mod facade {
         pub use visiting::*;
     }
 
-    #[announce::announce(crate::facade::my_crate::visiting)]
+    #[crate::facade::my_crate::visiting]
     #[visiting(crate = crate::facade::my_crate)]
     pub struct Leaf(pub u32);
 
-    #[announce::announce(crate::facade::my_crate::visiting)]
+    #[crate::facade::my_crate::visiting]
     #[visiting(crate = crate::facade::my_crate)]
     #[visiting(crate::facade::Leaf)]
     pub struct Node {

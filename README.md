@@ -13,8 +13,8 @@
 
 Walk a syntax tree you declared.
 
-Announce your nodes with `#[announce(visiting::visiting)]`, list them in `define_visit!`, and you get a
-visitor over them: one `visit_*` method per type, each with a body that already descends. One example
+Declare your nodes with `#[visiting]`, list them in `define_visit!`, and you get a visitor over
+them: one `visit_*` method per type, each with a body that already descends. One example
 carries the whole API — a closure, a visitor with state, editing a list, and extending a visitor:
 
 ```rust
@@ -23,7 +23,7 @@ use visiting::SeqEdit;
 // ── the nodes ───────────────────────────────────────────────────────────────────────────────────
 // A node is announced with [`announce`](https://docs.rs/announce): its definition is read again
 // wherever a visitor is built, so every path in it is absolute.
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub enum Expr {
     Lit(u32),
     Neg(::std::boxed::Box<crate::Expr>),
@@ -33,7 +33,7 @@ pub enum Expr {
 
 // `#[visiting]` names a type this visitor should follow but does not list; `#[skip]` takes a field
 // out of the walk entirely.
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Expr)]
 pub struct Stmt {
     pub e: crate::Expr,
@@ -124,16 +124,15 @@ as `impl base::VisitMut for Depth {}` does above.
 
 A visitor is built from its nodes' definitions, wherever they live — another module, or another
 crate. [`announce`](https://docs.rs/announce) publishes a definition's tokens for any crate to read,
-so a node is an announced type, and `visiting::visiting` is the check its `#[announce]` runs. The
-crate that defines a node depends on `announce`.
+so `#[visiting]` announces the node: it writes the item's `#[announce]`, with a check that owns the
+field markers. The crate that defines a node needs no dependency on announce. Write `#[visiting]`
+first among the item's attributes.
 
-The attributes are not ones rustc knows, so the check *owns* the four names: `#[announce]` removes
-them from the item it emits and keeps them in the payload, which is where `define_visit!` reads
-them. `#[announce]` has to sit above them, since rustc resolves attributes from the top. The
-follow-list can also go in the check's own arguments, `visiting::visiting(crate::Leaf)`:
+The follow-list goes in the attribute's arguments, or in further `#[visiting(..)]` attributes below
+it:
 
 ```rust,ignore
-#[announce::announce(visiting::visiting(crate::Leaf))]
+#[visiting::visiting(crate::Leaf)]
 pub struct Doc {
     #[seq]
     pub leaves: ::std::vec::Vec<crate::Leaf>,
@@ -143,27 +142,26 @@ pub struct Doc {
 ```
 
 Field types are `crate::`-rooted and std's absolute, and bounds absolute, because announce re-uses
-the payload where it is read; that is announce's own rule, and it reports a path that breaks it.
+the payload where it is read. That is announce's rule; `#[visiting]` reports every path that breaks
+it, with the absolute form of a std name.
 
 A node that another reader needs announced as well — a `#[coinduction]` module exports a type by
-announcing it — writes both announcements, and they merge into one trampoline:
+announcing it — writes that `#[announce]` too. The announcements of an item merge into one
+trampoline, so both must come from the same version of announce:
 
 ```rust,ignore
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[announce::announce]
 pub struct Boxed<T>(pub ::core::option::Option<::std::boxed::Box<T>>);
 ```
 
-This needs the merging of announcements in announce's `merge-announcements` branch.
-
 ## Using it through another crate
 
-The code the check emits names `::visiting`. If you reach this crate through a facade that
-re-exports it, run the check through the facade and name it:
+The code `#[visiting]` emits names `::visiting`. If you reach this crate through a facade that
+re-exports it, name the attribute through the facade and tell it so:
 
 ```rust,ignore
-#[announce::announce(my_crate::visiting)]
-#[visiting(crate = ::my_crate)]
+#[my_crate::visiting(crate = ::my_crate)]
 pub enum Expr { Lit(u32) }
 ```
 

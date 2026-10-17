@@ -13,14 +13,14 @@ mod ast {
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Length(pub i64);
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     pub enum Line {
         Text(i64),
         Nested(::std::boxed::Box<crate::ast::Line>),
     }
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     #[visiting(crate::ast::Line)]
     pub struct Page {
@@ -92,7 +92,7 @@ mod collides {
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Mark(pub i64);
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     pub enum Node {
         N(i64),
@@ -100,7 +100,7 @@ mod collides {
 
     /// Two shapes of one arity, which an earlier design could not give separate impls: they are the
     /// same tuple impl at `(Here, Here)` and `(Skip, Here)`.
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     #[visiting(crate::collides::Node)]
     pub struct Holder {

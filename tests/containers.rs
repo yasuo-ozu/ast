@@ -6,14 +6,14 @@
 mod nested {
     use core::marker::PhantomData;
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting()]
     pub struct Leaf<S> {
         pub _p: ::core::marker::PhantomData<S>,
         pub value: i64,
     }
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::nested::Leaf)]
     pub struct Holder<S> {
         pub vo: ::std::vec::Vec<::core::option::Option<crate::nested::Leaf<S>>>,
@@ -75,13 +75,13 @@ mod nested {
 mod container_of_tuple {
     use core::marker::PhantomData;
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting()]
     pub struct Leaf<S> {
         pub _p: ::core::marker::PhantomData<S>,
     }
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::container_of_tuple::Leaf)]
     pub struct Holder<S> {
         pub top: (
@@ -147,12 +147,12 @@ mod container_of_tuple {
 mod tuple_field {
     use core::marker::PhantomData;
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     pub enum Ty<S> {
         Unit(::core::marker::PhantomData<S>),
     }
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::tuple_field::Ty)]
     pub enum Expr<S> {
         Pair((crate::tuple_field::Ty<S>, crate::tuple_field::Ty<S>)),
@@ -382,10 +382,10 @@ mod own_container {
         }
     }
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     pub struct Item(pub u32);
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::own_container::Item)]
     pub struct Doc {
         #[seq]
@@ -529,10 +529,10 @@ mod own_map {
         }
     }
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     pub struct Item(pub u32);
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::own_map::Item)]
     pub struct Doc {
         // No marker: a keyed slot has no positional edit, so the field is walked and nothing else.
@@ -595,10 +595,10 @@ mod own_map {
 mod other_shapes {
     use std::collections::VecDeque;
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     pub struct Leaf(pub u32);
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::other_shapes::Leaf)]
     pub struct Holder {
         pub deque: ::std::collections::VecDeque<crate::other_shapes::Leaf>,

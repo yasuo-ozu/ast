@@ -6,12 +6,12 @@
 use core::marker::PhantomData;
 use visiting::{OptView, SeqView};
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub enum Leaf<S> {
     A(::core::marker::PhantomData<S>),
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Leaf)]
 pub struct Wrap<S> {
     pub items: ::std::vec::Vec<crate::Leaf<S>>,   // not `#[seq]` -> no `visit_leaf_seq_mut`

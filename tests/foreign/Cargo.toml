@@ -1,4 +1,5 @@
-# A crate that announces its nodes, for a visitor built in another crate.
+# A crate that declares its nodes, for a visitor built in another crate. It depends on `visiting`
+# alone: `#[visiting]` reaches announce through it.
 [package]
 name = "visiting-foreign-fixture"
 version = "0.0.0"
@@ -10,5 +11,4 @@ publish = false
 path = "src/lib.rs"
 
 [dependencies]
-announce = "0.1.1"
 visiting = { path = "../.." }

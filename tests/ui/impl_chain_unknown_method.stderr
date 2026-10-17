@@ -1,8 +1,8 @@
 error: `visit_nonsense` is not a method of any visitor this one extends; a method of its own trait belongs in your `impl Visit`
   --> tests/ui/impl_chain_unknown_method.rs:9:1
    |
- 9 |   #[announce::announce(visiting::visiting)]
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 9 |   #[visiting::visiting]
+   |   ^^^^^^^^^^^^^^^^^^^^^
 ...
 24 | / top::__visiting_chain::impl_chain! { top; P;
 25 | |     fn visit_nonsense(&mut self, i) { let _ = i; }

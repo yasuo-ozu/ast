@@ -4,12 +4,12 @@
 
 use core::marker::PhantomData;
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub enum Item<S> {
     Leaf(::core::marker::PhantomData<S>),
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Item)]
 pub struct List<S> {
     #[seq]

@@ -3,12 +3,12 @@
 //! still descends). Clean abort pointing at the field type, not a cryptic `SeqView` trait error.
 use core::marker::PhantomData;
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub enum Leaf<S> {
     A(::core::marker::PhantomData<S>),
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Leaf)]
 pub struct Wrap<S> {
     #[seq]

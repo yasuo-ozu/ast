@@ -22,7 +22,7 @@ proc-macro-error3 = { version = "3", default-features = false }
 # `OwnedAttrs`). `announce` itself re-exports the same module as `announce::helper`, but a proc macro
 # needs nothing else of it, and depending on the core crate keeps the consumer-side crate out of the
 # build graph.
-announce-core = "0.1.1"
+announce-core = "0.2.0"
 
 [dependencies.syn]
 version = "2.0"

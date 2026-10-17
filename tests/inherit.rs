@@ -11,14 +11,14 @@ mod ast {
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Tag(pub i64);
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     pub enum Leaf {
         N(i64),
     }
 
     /// Reaches `Leaf` four ways at once — plain, in a `Vec`, through a `Box`, and inside a tuple.
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     #[visiting(crate::ast::Leaf)]
     pub struct Mid {
@@ -28,7 +28,7 @@ mod ast {
         pub tagged: ::std::vec::Vec<(crate::ast::Tag, crate::ast::Leaf)>,
     }
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     #[visiting(crate::ast::Mid)]
     pub struct Top {

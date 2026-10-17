@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 /// The check's announcement first.
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[announce::announce]
 #[visiting(crate::Leaf)]
 pub struct Doc {
@@ -16,7 +16,7 @@ pub struct Doc {
 
 /// The other reader's announcement first.
 #[announce::announce]
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub struct Leaf {
     pub n: u32,
 }
@@ -48,7 +48,7 @@ fn each_is_announced_once() {
 }
 
 /// A leaf of its own: a type belongs to one `define_visit!` only.
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub struct Twig {
     pub n: u32,
 }
@@ -66,7 +66,7 @@ pub mod paths {
         type Out = u8;
     }
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::Twig)]
     pub struct List<T>
     where

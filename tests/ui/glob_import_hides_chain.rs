@@ -2,12 +2,12 @@
 //! the free `visit_*` functions, `IntoVisitor` — and none of the chain machinery. `impl_chain!`
 //! lives one module down, so the glob takes the module's name and not its contents.
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub enum Item<S> {
     Leaf(::core::marker::PhantomData<S>),
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Item)]
 pub struct List<S> {
     pub items: ::std::vec::Vec<crate::Item<S>>,

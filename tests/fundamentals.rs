@@ -5,7 +5,7 @@
 mod basic {
     use core::marker::PhantomData;
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     #[visiting(crate::basic::Stmt)]
     pub enum Expr<S> {
@@ -13,7 +13,7 @@ mod basic {
         Other(::core::marker::PhantomData<S>),
     }
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     #[visiting(crate::basic::Expr)]
     pub enum Stmt<S> {
@@ -80,7 +80,7 @@ mod basic {
 mod mutable {
     use core::marker::PhantomData;
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     pub enum Expr<S> {
         Add(
@@ -147,7 +147,7 @@ mod mutable {
 mod hygiene {
     use core::marker::PhantomData;
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     pub enum Node<__V, __T, __H, __F, __A, __B> {
         Rec(::std::boxed::Box<crate::hygiene::Node<__V, __T, __H, __F, __A, __B>>),
@@ -172,7 +172,7 @@ mod hygiene {
     }
 
     // The indexed tuple-closure helper family (`__F0`/`__T0`/…) is protected by `fresh_prefix`.
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     pub enum Tup<__F0, __T0> {
         Rec(::std::boxed::Box<crate::hygiene::Tup<__F0, __T0>>),
@@ -198,13 +198,13 @@ mod hygiene {
 
     // Value bindings (the generated receiver `this` / scrutinee `i`) are span-isolated from user
     // idents, so a visited type may have followed fields literally named `this` and `i`.
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     pub enum Leaf<S> {
         U(::core::marker::PhantomData<S>),
     }
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[derive(Debug)]
     #[visiting(crate::hygiene::Leaf)]
     pub struct Names<S> {
@@ -253,7 +253,7 @@ mod local_types {
     mod ast {
 
         // `Local` is intentionally a leaf; `Rec` is followed via implicit self-recursion.
-        #[announce::announce(visiting::visiting)]
+        #[visiting::visiting]
         #[derive(Debug)]
         #[visiting()]
         pub enum Expr<S> {
@@ -290,7 +290,7 @@ mod where_clause {
 
     // The bound is written as a resolvable path because the generated items live in `mod v` — the
     // same canonical-path requirement the `#[visiting]` paths have.
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting()]
     pub enum Expr<S>
     where
@@ -317,7 +317,7 @@ mod where_clause {
 mod generics {
     use core::marker::PhantomData;
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting(crate::generics::BinOp)]
     pub enum Expr<S, Tokens> {
         Bin(
@@ -328,7 +328,7 @@ mod generics {
         Lit(i64, ::core::marker::PhantomData<(S, Tokens)>),
     }
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     pub enum BinOp<S> {
         Add(::core::marker::PhantomData<S>),
         Mul(::core::marker::PhantomData<S>),
@@ -365,7 +365,7 @@ mod union_where_unshared {
 
     pub trait Bound {}
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting()]
     pub struct Bounded<S>
     where
@@ -374,7 +374,7 @@ mod union_where_unshared {
         pub _p: ::core::marker::PhantomData<S>,
     }
 
-    #[announce::announce(visiting::visiting)]
+    #[visiting::visiting]
     #[visiting()]
     pub struct Plain {
         pub _x: u8,

@@ -8,19 +8,19 @@
 //! fixture pin a warning.
 #![deny(deprecated)]
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub struct Leaf {
     pub n: u32,
 }
 
 // `Twig` is the dead entry; `crate::Leaf` beside it is matched, and must stay silent.
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Leaf, crate::Twig)]
 pub struct Node {
     pub leaf: crate::Leaf,
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub struct Twig {
     pub n: u32,
 }

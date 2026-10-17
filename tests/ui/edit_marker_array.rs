@@ -2,12 +2,12 @@
 //! be structurally edited). This is a clean error, not a cryptic `[Leaf; N]: SeqView<Leaf>` trait error.
 use core::marker::PhantomData;
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub enum Leaf<S> {
     A(::core::marker::PhantomData<S>),
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Leaf)]
 pub struct Wrap<S> {
     #[seq]

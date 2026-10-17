@@ -10,7 +10,7 @@ mod other {
     pub struct Stmt;
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting()]
 pub enum Expr<S> {
     ToStmt(::std::boxed::Box<crate::Stmt<S>>),
@@ -18,7 +18,7 @@ pub enum Expr<S> {
     Lit(::core::marker::PhantomData<S>),
 }
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting()]
 pub enum Stmt<S> {
     Back(::std::boxed::Box<crate::Expr<S>>),

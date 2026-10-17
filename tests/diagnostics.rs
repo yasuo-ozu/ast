@@ -33,6 +33,8 @@ fn diagnostics() {
     t.compile_fail("tests/ui/subast_entry_not_a_node.rs");
     // The check on a union.
     t.compile_fail("tests/ui/visiting_check_on_a_union.rs");
+    // A node's relative paths, all reported at once.
+    t.compile_fail("tests/ui/visiting_relative_path.rs");
     // `impl_chain!` given a method no ancestor declares.
     t.compile_fail("tests/ui/impl_chain_unknown_method.rs");
     // Marker on a non-viewable / container-less / non-visited field → clean abort, not a cryptic trait error.

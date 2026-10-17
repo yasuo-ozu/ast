@@ -1,0 +1,37 @@
+error: trait `Bound` is not an absolute path. `#[visiting]` announces the node, and the definition is read again where a visitor is built, so write it as `crate::..`, `::std::..`, `::core::..` or `::other_crate::..` (std's prelude names count as relative)
+  --> tests/ui/visiting_relative_path.rs:16:20
+   |
+16 | pub struct Node<T: Bound> {
+   |                    ^^^^^
+
+error: type `Box<Node<T>>` is not an absolute path. `#[visiting]` announces the node, and the definition is read again where a visitor is built, so write it as `crate::..`, `::std::..`, `::core::..` or `::other_crate::..` — here `::std::boxed::Box` (std's prelude names count as relative)
+  --> tests/ui/visiting_relative_path.rs:22:16
+   |
+22 |     pub boxed: Box<Node<T>>,
+   |                ^^^^^^^^^^^^
+
+error: type `Node<T>` is not an absolute path. `#[visiting]` announces the node, and the definition is read again where a visitor is built, so write it as `crate::..`, `::std::..`, `::core::..` or `::other_crate::..` (std's prelude names count as relative)
+  --> tests/ui/visiting_relative_path.rs:22:20
+   |
+22 |     pub boxed: Box<Node<T>>,
+   |                    ^^^^^^^
+
+error: type `Local` is not an absolute path. `#[visiting]` announces the node, and the definition is read again where a visitor is built, so write it as `crate::..`, `::std::..`, `::core::..` or `::other_crate::..` (std's prelude names count as relative)
+  --> tests/ui/visiting_relative_path.rs:23:16
+   |
+23 |     pub local: Local,
+   |                ^^^^^
+
+error: value `N` is not an absolute path. `#[visiting]` announces the node, and the definition is read again where a visitor is built, so write it as `crate::..`, `::std::..`, `::core::..` or `::other_crate::..` (std's prelude names count as relative)
+  --> tests/ui/visiting_relative_path.rs:24:19
+   |
+24 |     pub arr: [u8; N],
+   |                   ^
+
+warning: unused import: `inner::Local`
+ --> tests/ui/visiting_relative_path.rs:9:5
+  |
+9 | use inner::Local;
+  |     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default

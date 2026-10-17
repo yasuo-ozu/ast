@@ -30,19 +30,10 @@ version_check = "0.9"
 visiting-macro = { path = "macro", version = "0.2.0" }
 # The check asserts that every follow entry is announced, naming `Announce` through `visit::__announce`.
 # Only that trait is needed, so announce's proc-macro API stays off.
-announce = { version = "0.1.1", default-features = false }
+announce = { version = "0.2.0", default-features = false }
 
 [dev-dependencies]
 trybuild = "1.0"
 # The tests declare their nodes with `#[announce]`, which needs the default features.
-announce = "0.1.1"
+announce = "0.2.0"
 visiting-foreign-fixture = { path = "tests/foreign" }
-
-# A node is declared with `#[announce]`, and a node that another reader announces too relies on its
-# announcements merging into one trampoline — announce's unreleased `merge-announcements` branch.
-# Pinned by commit, since the lock file is not committed and the branch moves. Drop this once it is
-# released.
-[patch.crates-io]
-announce = { git = "https://github.com/yasuo-ozu/announce", rev = "b2c9346" }
-announce-core = { git = "https://github.com/yasuo-ozu/announce", rev = "b2c9346" }
-announce-macros = { git = "https://github.com/yasuo-ozu/announce", rev = "b2c9346" }

@@ -7,21 +7,21 @@
 
 use core::marker::PhantomData;
 
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 pub enum Type<S> {
     U(::core::marker::PhantomData<S>),
 }
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Type)]
 pub struct Expr<S> {
     pub t: crate::Type<S>,
 }
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Expr)]
 pub struct Stmt<S> {
     pub e: crate::Expr<S>,
 }
-#[announce::announce(visiting::visiting)]
+#[visiting::visiting]
 #[visiting(crate::Stmt)]
 pub struct Item<S> {
     pub s: crate::Stmt<S>,

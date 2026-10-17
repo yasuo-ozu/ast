@@ -1,18 +1,17 @@
 //! `#[seq]` on a container-less field (a bare `Box<Leaf>`) — a marker needs a real collection. Clean
 //! error, not a cryptic `Box<Leaf>: SeqView<Leaf>` trait error via the Box forwarder.
 use core::marker::PhantomData;
-use visiting::Visiting;
 
-#[derive(Visiting)]
+#[visiting::visiting]
 pub enum Leaf<S> {
-    A(PhantomData<S>),
+    A(::core::marker::PhantomData<S>),
 }
 
-#[derive(Visiting)]
+#[visiting::visiting]
 #[visiting(crate::Leaf)]
 pub struct Wrap<S> {
     #[seq]
-    pub inner: Box<Leaf<S>>,
+    pub inner: ::std::boxed::Box<crate::Leaf<S>>,
 }
 
 pub mod vis {

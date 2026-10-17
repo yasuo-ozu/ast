@@ -3,11 +3,11 @@ name = "visiting"
 version = "0.2.0"
 edition = "2021"
 rust-version = "1.61"
-description = "Walk a derived syntax tree: the Visiting derive and the define_visit! generator"
+description = "Walk an announced syntax tree: the visiting check for announce, and the define_visit! generator"
 license = "MIT"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
 repository = "https://github.com/yasuo-ozu/visiting"
-keywords = ["ast", "visitor", "syntax-tree", "derive", "proc-macro"]
+keywords = ["ast", "visitor", "syntax-tree", "announce", "proc-macro"]
 categories = ["development-tools::procedural-macro-helpers", "parsing"]
 # The README links the logo by its raw URL, so the file itself need not ship in the crate.
 # The fixture crate is a workspace member for the cross-crate test, not content of this one, and it
@@ -28,10 +28,12 @@ version_check = "0.9"
 
 [dependencies]
 visiting-macro = { path = "macro", version = "0.2.0" }
+# The check asserts that every follow entry is announced, naming `Announce` through `visit::__announce`.
+# Only that trait is needed, so announce's proc-macro API stays off.
+announce = { version = "0.2.0", default-features = false }
 
 [dev-dependencies]
 trybuild = "1.0"
-# Tests only: the generated code never names `announce`, and a consumer needs no dependency on it.
-# `announce-core` is a dependency of the macro crate, which is what parses the protocol.
-announce = "0.1.0"
+# The tests declare their nodes with `#[announce]`, which needs the default features.
+announce = "0.2.0"
 visiting-foreign-fixture = { path = "tests/foreign" }

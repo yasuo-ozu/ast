@@ -1,18 +1,15 @@
 //! A method name no ancestor declares is rejected rather than dropped in silence: every muncher
 //! would skip it, so the override would simply never run.
 
-use visiting::Visiting;
-use core::marker::PhantomData;
-
-#[derive(Visiting)]
+#[visiting::visiting]
 pub enum Type<S> {
-    Leaf(PhantomData<S>),
+    Leaf(::core::marker::PhantomData<S>),
 }
 
-#[derive(Visiting)]
+#[visiting::visiting]
 #[visiting(crate::Type)]
 pub struct Item<S> {
-    pub ty: Type<S>,
+    pub ty: crate::Type<S>,
 }
 
 pub mod base {

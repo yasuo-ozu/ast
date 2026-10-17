@@ -5,34 +5,33 @@
 #![allow(dead_code)]
 
 use core::marker::PhantomData;
-use visiting::Visiting;
 
 mod deep {
     use super::*;
 
-    #[derive(Visiting)]
+    #[visiting::visiting]
     pub enum A<S> {
-        X(PhantomData<S>),
+        X(::core::marker::PhantomData<S>),
     }
-    #[derive(Visiting)]
+    #[visiting::visiting]
     #[visiting(crate::deep::A)]
     pub struct B<S> {
-        pub a: A<S>,
+        pub a: crate::deep::A<S>,
     }
-    #[derive(Visiting)]
+    #[visiting::visiting]
     #[visiting(crate::deep::B)]
     pub struct C<S> {
-        pub b: B<S>,
+        pub b: crate::deep::B<S>,
     }
-    #[derive(Visiting)]
+    #[visiting::visiting]
     #[visiting(crate::deep::C)]
     pub struct D<S> {
-        pub c: C<S>,
+        pub c: crate::deep::C<S>,
     }
-    #[derive(Visiting)]
+    #[visiting::visiting]
     #[visiting(crate::deep::D)]
     pub struct E<S> {
-        pub d: D<S>,
+        pub d: crate::deep::D<S>,
     }
 
     pub mod v1 {
@@ -109,21 +108,21 @@ mod deep {
 mod widened {
     use super::*;
 
-    #[derive(Visiting)]
+    #[visiting::visiting]
     pub enum Type<S> {
-        U(PhantomData<S>),
+        U(::core::marker::PhantomData<S>),
     }
-    #[derive(Visiting)]
+    #[visiting::visiting]
     #[visiting(crate::widened::Type)]
     pub struct Expr<S> {
-        pub t: Type<S>,
+        pub t: crate::widened::Type<S>,
     }
     // The extender carries a parameter its ancestors never had.
-    #[derive(Visiting)]
+    #[visiting::visiting]
     #[visiting(crate::widened::Expr)]
     pub struct Item<S, T> {
-        pub e: Expr<S>,
-        pub tag: PhantomData<T>,
+        pub e: crate::widened::Expr<S>,
+        pub tag: ::core::marker::PhantomData<T>,
     }
 
     pub mod base {

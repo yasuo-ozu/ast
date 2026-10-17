@@ -8,25 +8,26 @@
 #![allow(dead_code)]
 
 mod ast {
-    use visiting::Visiting;
 
     /// A consumer leaf that shares a tuple with a followed node — the `Vec<(Length, Line)>` shape.
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Length(pub i64);
 
-    #[derive(Debug, Visiting)]
+    #[visiting::visiting]
+    #[derive(Debug)]
     pub enum Line {
         Text(i64),
-        Nested(Box<Line>),
+        Nested(::std::boxed::Box<crate::ast::Line>),
     }
 
-    #[derive(Debug, Visiting)]
+    #[visiting::visiting]
+    #[derive(Debug)]
     #[visiting(crate::ast::Line)]
     pub struct Page {
-        pub placed: Vec<(Length, Line)>,
-        pub header: Option<Box<Line>>,
-        pub by_name: std::collections::BTreeMap<String, Line>,
-        pub width: Length,
+        pub placed: ::std::vec::Vec<(crate::ast::Length, crate::ast::Line)>,
+        pub header: ::core::option::Option<::std::boxed::Box<crate::ast::Line>>,
+        pub by_name: ::std::collections::BTreeMap<::std::string::String, crate::ast::Line>,
+        pub width: crate::ast::Length,
     }
 
     pub mod v {
@@ -87,23 +88,24 @@ fn a_node_counts_itself_and_its_children() {
 
 // ── when two tuple shapes of one arity overlap ───────────────────────────────────────────────────
 mod collides {
-    use visiting::Visiting;
 
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Mark(pub i64);
 
-    #[derive(Debug, Visiting)]
+    #[visiting::visiting]
+    #[derive(Debug)]
     pub enum Node {
         N(i64),
     }
 
     /// Two shapes of one arity, which an earlier design could not give separate impls: they are the
     /// same tuple impl at `(Here, Here)` and `(Skip, Here)`.
-    #[derive(Debug, Visiting)]
+    #[visiting::visiting]
+    #[derive(Debug)]
     #[visiting(crate::collides::Node)]
     pub struct Holder {
-        pub both: Vec<(Node, Node)>,
-        pub tagged: Vec<(Mark, Node)>,
+        pub both: ::std::vec::Vec<(crate::collides::Node, crate::collides::Node)>,
+        pub tagged: ::std::vec::Vec<(crate::collides::Mark, crate::collides::Node)>,
     }
 
     pub mod v {

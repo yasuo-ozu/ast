@@ -1,10 +1,10 @@
 error: a `#[seq]` field's container is an array/slice — not structurally editable; use `Vec`/`VecDeque`/`Option`, or any container implementing `SeqView`/`OptView`
-  --> tests/ui/edit_marker_array.rs:15:16
+  --> tests/ui/edit_marker_array.rs:14:16
    |
-15 |     pub items: [Leaf<S>; 3],
-   |                ^^^^^^^^^^^^
+14 |     pub items: [crate::Leaf<S>; 3],
+   |                ^^^^^^^^^^^^^^^^^^^
 ...
-19 |     visiting::define_visit!(crate::Wrap, crate::Leaf);
+18 |     visiting::define_visit!(crate::Wrap, crate::Leaf);
    |     ------------------------------------------------- in this macro invocation
    |
    = note: this error originates in the macro `crate::Wrap` which comes from the expansion of the macro `visiting::define_visit` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,9 +1,0 @@
-error[E0119]: conflicting implementations of trait `Visiting` for type `Doc`
-  --> tests/ui/visiting_check_and_attribute.rs:14:1
-   |
-13 | #[derive(visiting::Visiting)]
-   |          ------------------ first implementation here
-14 | #[announce::announce(macro_name = DocAnnounced, visiting::visiting(crate::Leaf))]
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ conflicting implementation for `Doc`
-   |
-   = note: this error originates in the macro `visiting::visiting` (in Nightly builds, run with -Z macro-backtrace for more info)

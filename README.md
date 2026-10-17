@@ -11,30 +11,32 @@
 [MSRV]: https://img.shields.io/crates/msrv/visiting.svg
 [msrv-workflow]: https://github.com/yasuo-ozu/visiting/actions/workflows/msrv.yml
 
-Walk a syntax tree you derived.
+Walk a syntax tree you declared.
 
-Put `#[derive(Visiting)]` on your nodes, list them in `define_visit!`, and you get a visitor over them: one
-`visit_*` method per type, each with a body that already descends. One example carries the whole
-API — a closure, a visitor with state, editing a list, and extending a visitor:
+Declare your nodes with `#[visiting]`, list them in `define_visit!`, and you get a visitor over
+them: one `visit_*` method per type, each with a body that already descends. One example
+carries the whole API — a closure, a visitor with state, editing a list, and extending a visitor:
 
 ```rust
-use visiting::{Visiting, SeqEdit};
+use visiting::SeqEdit;
 
 // ── the nodes ───────────────────────────────────────────────────────────────────────────────────
-#[derive(Visiting)]
+// A node is announced with [`announce`](https://docs.rs/announce): its definition is read again
+// wherever a visitor is built, so every path in it is absolute.
+#[visiting::visiting]
 pub enum Expr {
     Lit(u32),
-    Neg(Box<Expr>),
+    Neg(::std::boxed::Box<crate::Expr>),
     // `#[seq]` asks for the whole slot, not one element.
-    Many(#[seq] Vec<Expr>),
+    Many(#[seq] ::std::vec::Vec<crate::Expr>),
 }
 
 // `#[visiting]` names a type this visitor should follow but does not list; `#[skip]` takes a field
 // out of the walk entirely.
-#[derive(Visiting)]
+#[visiting::visiting]
 #[visiting(crate::Expr)]
 pub struct Stmt {
-    pub e: Expr,
+    pub e: crate::Expr,
 }
 
 // ── the visitors ────────────────────────────────────────────────────────────────────────────────
@@ -118,30 +120,19 @@ and a visitor descends on its own, so it cannot join — two visitors are two wa
 A visitor implements every trait in its chain; the ancestors it does not touch take an empty impl,
 as `impl base::VisitMut for Depth {}` does above.
 
-## Using it through another crate
+## Nodes are announced
 
-The code a node emits names `::visiting`. If you reach this crate through a facade that re-exports it,
-name that instead:
+A visitor is built from its nodes' definitions, wherever they live — another module, or another
+crate. [`announce`](https://docs.rs/announce) publishes a definition's tokens for any crate to read,
+so `#[visiting]` announces the node: it writes the item's `#[announce]`, with a check that owns the
+field markers. The crate that defines a node needs no dependency on announce. Write `#[visiting]`
+first among the item's attributes.
 
-```rust,ignore
-#[derive(Visiting)]
-#[visiting(crate = ::my_crate)]
-pub enum Expr { Lit(u32) }
-```
-
-`define_visit!` needs no such hint — it finds the crate on its own.
-
-## Nodes from a crate that only announces
-
-A node has to be declared where it is defined, so a type in a crate that never heard of this one
-cannot be walked. [`announce`](https://docs.rs/announce) publishes a definition's tokens for any
-crate to read, and this crate's metadata speaks announce's protocol — so the definition is reachable.
-What is left is the `Visiting` marker, which only the defining crate may implement. Hand this crate's
-check to `#[announce]` and it is written there:
+The follow-list goes in the attribute's arguments, or in further `#[visiting(..)]` attributes below
+it:
 
 ```rust,ignore
-#[announce::announce(visiting::visiting)]
-#[visiting(crate::Leaf)]
+#[visiting::visiting(crate::Leaf)]
 pub struct Doc {
     #[seq]
     pub leaves: ::std::vec::Vec<crate::Leaf>,
@@ -150,17 +141,31 @@ pub struct Doc {
 }
 ```
 
-`#[derive(Visiting)]` is not involved, and the attributes are the same ones. Rustc knows none of
-them — a derive is what normally declares them — so the check *owns* the four names: `#[announce]`
-removes them from the item it emits and keeps them in the payload, which is where
-`define_visit!(crate::Doc, crate::Leaf)` reads them. `#[announce]` has to sit above them, since
-rustc resolves attributes from the top. The follow-list can also go in the check's own arguments,
-`visiting::visiting(crate::Leaf)`.
+Field types are `crate::`-rooted and std's absolute, and bounds absolute, because announce re-uses
+the payload where it is read. That is announce's rule; `#[visiting]` reports every path that breaks
+it, with the absolute form of a std name.
 
-Field types are `crate::`-rooted and bounds absolute because announce re-uses the payload in the
-consuming crate; that is announce's own rule. A type that derives `Visiting` must not also carry the
-check — the derive would never see its attributes — and rustc says so: both sides implement the
-marker, which is a conflicting-implementations error.
+A node that another reader needs announced as well — a `#[coinduction]` module exports a type by
+announcing it — writes that `#[announce]` too. The announcements of an item merge into one
+trampoline, so both must come from the same version of announce:
+
+```rust,ignore
+#[visiting::visiting]
+#[announce::announce]
+pub struct Boxed<T>(pub ::core::option::Option<::std::boxed::Box<T>>);
+```
+
+## Using it through another crate
+
+The code `#[visiting]` emits names `::visiting`. If you reach this crate through a facade that
+re-exports it, name the attribute through the facade and tell it so:
+
+```rust,ignore
+#[my_crate::visiting(crate = ::my_crate)]
+pub enum Expr { Lit(u32) }
+```
+
+`define_visit!` needs no such hint — it finds the crate on its own.
 
 ## License
 

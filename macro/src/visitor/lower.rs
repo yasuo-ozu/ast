@@ -84,8 +84,8 @@ pub(crate) fn tuple_impls(
         .collect()
 }
 
-/// The `#[seq]`/`#[opt]` marker on a field (`None` if unmarked), preserved into the `#[derive(Visiting)]`
-/// metadata so the visitor can dispatch the field through its `SeqView`/`OptView` view.
+/// The `#[seq]`/`#[opt]` marker on a field (`None` if unmarked), kept in the announced definition so
+/// the visitor can dispatch the field through its `SeqView`/`OptView` view.
 fn field_view(attrs: &[Attribute]) -> Option<Container> {
     let seq = attrs.iter().any(|a| a.path().is_ident("seq"));
     let opt = attrs.iter().any(|a| a.path().is_ident("opt"));
@@ -436,7 +436,11 @@ impl<'a> Lower<'a> {
                      those nodes are unreachable however the visitor is written. Give `{}` a field \
                      of the concrete type instead of `{}`, or list the instantiated node and reach \
                      it from there",
-                    quote!(#arg_ty).to_string().replace(' ', ""),
+                    // An announced definition names its own crate `$crate`; say it as it was written.
+                    quote!(#arg_ty)
+                        .to_string()
+                        .replace(' ', "")
+                        .replace("$crate", "crate"),
                     head,
                     param,
                     head,

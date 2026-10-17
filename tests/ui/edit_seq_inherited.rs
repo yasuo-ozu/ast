@@ -3,18 +3,17 @@
 //! type (`Item`, owned by `base`) is a clean error, not a cryptic "no method `visit_item_seq`" downstream.
 
 use core::marker::PhantomData;
-use visiting::Visiting;
 
-#[derive(Visiting)]
+#[visiting::visiting]
 pub enum Item<S> {
-    Leaf(PhantomData<S>),
+    Leaf(::core::marker::PhantomData<S>),
 }
 
-#[derive(Visiting)]
+#[visiting::visiting]
 #[visiting(crate::Item)]
 pub struct List<S> {
     #[seq]
-    pub items: Vec<Item<S>>, // `Item` is inherited from `base`, not targeted by `ext`
+    pub items: ::std::vec::Vec<crate::Item<S>>, // `Item` is inherited from `base`, not targeted by `ext`
 }
 
 pub mod base {

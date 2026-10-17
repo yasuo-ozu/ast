@@ -6,7 +6,7 @@ pub struct Plain {
     pub n: u32,
 }
 
-#[announce::announce(visiting::visiting(crate::Plain))]
+#[visiting::visiting(crate::Plain)]
 pub struct Doc {
     pub plain: crate::Plain,
 }

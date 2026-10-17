@@ -7,17 +7,18 @@
 #![allow(dead_code)]
 
 mod ast {
-    use visiting::Visiting;
 
-    #[derive(Debug, Visiting)]
+    #[visiting::visiting]
+    #[derive(Debug)]
     pub enum Node {
         Leaf(i64),
     }
 
-    #[derive(Debug, Visiting)]
+    #[visiting::visiting]
+    #[derive(Debug)]
     #[visiting(crate::ast::Node)]
     pub struct Tree {
-        pub nodes: Vec<Node>,
+        pub nodes: ::std::vec::Vec<crate::ast::Node>,
     }
 
     pub mod v {
@@ -153,9 +154,8 @@ fn two_edit_passes_run_in_order() {
 // them and cannot shadow a name of the caller's own. (`#[doc(hidden)]` alone would not do this — it
 // hides an item from rustdoc while leaving it importable.)
 mod glob_import {
-    use visiting::Visiting;
 
-    #[derive(Visiting)]
+    #[visiting::visiting]
     pub enum Node {
         Leaf(i64),
     }

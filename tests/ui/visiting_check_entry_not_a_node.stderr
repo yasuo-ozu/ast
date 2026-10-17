@@ -1,15 +1,15 @@
-error[E0277]: `Plain` is not an AST node
+error[E0277]: `Plain` is not announced: its definition has no `#[announce]`
   --> tests/ui/visiting_check_entry_not_a_node.rs:11:16
    |
 11 |     pub plain: crate::Plain,
-   |                ^^^^^^^^^^^^ not an AST node
+   |                ^^^^^^^^^^^^ not announced, so it has no trampoline to call
    |
-   = help: the trait `Visiting` is not implemented for `Plain`
-   = note: declare `Plain` a node — `#[derive(Visiting)]`, or a `visiting(..)` check in its `#[announce]` — since every entry in a follow-list has to be one
-   = help: the trait `Visiting` is implemented for `Doc`
+   = help: the trait `Announce` is not implemented for `Plain`
+   = note: add `#[announce]` to the definition of `Plain`; for items of std and core, use the stand-ins of the `announce-std` crate
+   = help: the trait `Announce` is implemented for `Doc`
 note: required by a bound in `assert_node`
   --> tests/ui/visiting_check_entry_not_a_node.rs:9:1
    |
- 9 | #[announce::announce(visiting::visiting(crate::Plain))]
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `assert_node`
-   = note: this error originates in the macro `visiting::visiting` (in Nightly builds, run with -Z macro-backtrace for more info)
+ 9 | #[visiting::visiting(crate::Plain)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `assert_node`
+   = note: this error originates in the macro `::visiting::_imp::visiting` (in Nightly builds, run with -Z macro-backtrace for more info)

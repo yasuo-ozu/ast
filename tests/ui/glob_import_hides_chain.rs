@@ -2,18 +2,15 @@
 //! the free `visit_*` functions, `IntoVisitor` — and none of the chain machinery. `impl_chain!`
 //! lives one module down, so the glob takes the module's name and not its contents.
 
-use core::marker::PhantomData;
-use visiting::Visiting;
-
-#[derive(Visiting)]
+#[visiting::visiting]
 pub enum Item<S> {
-    Leaf(PhantomData<S>),
+    Leaf(::core::marker::PhantomData<S>),
 }
 
-#[derive(Visiting)]
+#[visiting::visiting]
 #[visiting(crate::Item)]
 pub struct List<S> {
-    pub items: Vec<Item<S>>,
+    pub items: ::std::vec::Vec<crate::Item<S>>,
 }
 
 pub mod base {

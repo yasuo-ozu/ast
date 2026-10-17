@@ -1,10 +1,7 @@
 //! A visitor over types from a crate that only announces.
 //!
-//! This is the case the `visiting(..)` check exists for. `visiting-foreign-fixture` defines the
-//! nodes; it derives nothing of ours and writes no impls. The marker `impl Visiting` cannot be
-//! written *here* — the trait and the types are both foreign, so the orphan rule forbids it — and
-//! that is what used to stop a foreign announced type from being walked at all. The check puts the
-//! impl beside the definition instead, and the follow-list the fixture wrote as `crate::Leaf` has to
+//! `visiting-foreign-fixture` defines the nodes and announces them with the `visiting(..)` check;
+//! this crate only builds the visitor. The follow-list the fixture wrote as `crate::Leaf` has to
 //! arrive still naming the fixture.
 //!
 //! A foreign type cannot carry the inherent `visit` method either (E0116), so the walk starts
@@ -54,11 +51,11 @@ fn a_foreign_node_in_a_submodule_is_walked() {
 }
 
 #[test]
-fn the_foreign_types_are_nodes_without_this_crate_implementing_anything() {
-    fn is_node<T: visiting::visit::Visiting>() {}
-    is_node::<Leaf>();
-    is_node::<Tree>();
-    is_node::<Branch>();
+fn the_foreign_types_are_announced_by_their_own_crate() {
+    fn announced<T: announce::Announce>() {}
+    announced::<Leaf>();
+    announced::<Tree>();
+    announced::<Branch>();
 }
 
 #[test]
@@ -93,9 +90,7 @@ fn an_aliased_follow_entry_is_matched() {
 
 /// `#[seq]`, `#[opt]` and `#[skip]` inside an announced definition. The markers are what make the
 /// walk offer the *slot* — the whole `Vec`, the whole `Option` — instead of each element, and
-/// `#[skip]` takes a field out of the walk. Until announce let a check own attribute names, none of
-/// the three could be written on a type that does not derive, so an announced node was always
-/// walked the plain way.
+/// `#[skip]` takes a field out of the walk. rustc knows none of the three; the check owns them.
 #[derive(Default)]
 struct Slots {
     seq_len: usize,
@@ -157,8 +152,8 @@ fn a_skipped_field_of_an_announced_node_is_not_walked() {
 fn an_announced_node_can_write_its_follow_list_as_an_attribute() {
     // `Marked` lists `crate::Leaf` in `#[visiting(..)]` inside the definition rather than in the
     // check's arguments, and the walk above found the leaves through it.
-    fn is_node<T: visiting::visit::Visiting>() {}
-    is_node::<Marked>();
+    fn announced<T: announce::Announce>() {}
+    announced::<Marked>();
 }
 
 /// The editing half of a marker, on an announced node: the `&mut` walk is handed the slot, so it can

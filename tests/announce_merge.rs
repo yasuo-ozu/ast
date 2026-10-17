@@ -91,12 +91,12 @@ pub mod paths {
     #[visiting(crate::Twig)]
     pub struct List<T>
     where
-        T: crate::paths::Has + Clone + ::core::default::Default,
+        T: crate::paths::Has + ::core::clone::Clone + ::core::default::Default,
     {
-        pub next: Option<Box<List<T>>>,
-        pub up: super::Twig,
-        pub pair: [super::Twig; N],
-        pub out: <T as Has>::Out,
+        pub next: ::core::option::Option<::std::boxed::Box<crate::paths::List<T>>>,
+        pub up: crate::Twig,
+        pub pair: [crate::Twig; crate::paths::N],
+        pub out: <T as crate::paths::Has>::Out,
     }
 
     pub mod v {

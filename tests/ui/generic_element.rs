@@ -6,19 +6,19 @@ use core::marker::PhantomData;
 use visiting::Visiting;
 
 #[derive(Visiting)]
-pub struct Qubit<S>(pub i64, pub PhantomData<S>);
+pub struct Qubit<S>(pub i64, pub ::core::marker::PhantomData<S>);
 
 #[derive(Visiting)]
 #[visiting(crate::Qubit)]
 pub struct Brackets<T, S> {
-    pub items: Vec<T>, // `T` is never a head — this field is a LEAF
-    pub tag: PhantomData<S>,
+    pub items: ::std::vec::Vec<T>, // `T` is never a head — this field is a LEAF
+    pub tag: ::core::marker::PhantomData<S>,
 }
 
 #[derive(Visiting)]
 #[visiting(crate::Qubit, crate::Brackets)]
 pub struct Stmt<S> {
-    pub b: Brackets<Qubit<S>, S>,
+    pub b: crate::Brackets<crate::Qubit<S>, S>,
 }
 
 pub mod v {

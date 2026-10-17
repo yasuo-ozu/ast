@@ -9,7 +9,7 @@ pub struct Plain<S>(S);
 #[derive(Visiting)]
 #[visiting(crate::Plain)]
 pub struct Node<S> {
-    pub p: Plain<S>,
+    pub p: crate::Plain<S>,
 }
 
 fn main() {}

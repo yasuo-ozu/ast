@@ -1,8 +1,8 @@
 error: a `#[seq]` field's element type is not a visited type — mark only a field whose element is a container of a type listed in `define_visit!(..)`
   --> tests/ui/edit_marker_unvisited.rs:15:16
    |
-15 |     pub items: Vec<String>, // `String` is not a visited AST type
-   |                ^^^^^^^^^^^
+15 |     pub items: ::std::vec::Vec<::std::string::String>, // `String` is not a visited AST type
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ...
 20 |     visiting::define_visit!(crate::Wrap, crate::Leaf);
    |     ------------------------------------------------- in this macro invocation

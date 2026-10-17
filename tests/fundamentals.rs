@@ -9,15 +9,15 @@ mod basic {
     #[derive(Debug, Visiting)]
     #[visiting(crate::basic::Stmt)]
     pub enum Expr<S> {
-        Stmt(Box<Stmt<S>>),
-        Other(PhantomData<S>),
+        Stmt(::std::boxed::Box<crate::basic::Stmt<S>>),
+        Other(::core::marker::PhantomData<S>),
     }
 
     #[derive(Debug, Visiting)]
     #[visiting(crate::basic::Expr)]
     pub enum Stmt<S> {
-        Expr(Box<Expr<S>>),
-        Other(PhantomData<S>),
+        Expr(::std::boxed::Box<crate::basic::Expr<S>>),
+        Other(::core::marker::PhantomData<S>),
     }
 
     pub mod visit {
@@ -82,8 +82,11 @@ mod mutable {
 
     #[derive(Debug, Visiting)]
     pub enum Expr<S> {
-        Add(Box<Expr<S>>, Box<Expr<S>>),
-        Lit(i64, PhantomData<S>),
+        Add(
+            ::std::boxed::Box<crate::mutable::Expr<S>>,
+            ::std::boxed::Box<crate::mutable::Expr<S>>,
+        ),
+        Lit(i64, ::core::marker::PhantomData<S>),
     }
 
     pub mod visit {
@@ -146,8 +149,8 @@ mod hygiene {
 
     #[derive(Debug, Visiting)]
     pub enum Node<__V, __T, __H, __F, __A, __B> {
-        Rec(Box<Node<__V, __T, __H, __F, __A, __B>>),
-        Leaf(PhantomData<(__V, __T, __H, __F, __A, __B)>),
+        Rec(::std::boxed::Box<crate::hygiene::Node<__V, __T, __H, __F, __A, __B>>),
+        Leaf(::core::marker::PhantomData<(__V, __T, __H, __F, __A, __B)>),
     }
 
     pub mod visit {
@@ -170,8 +173,8 @@ mod hygiene {
     // The indexed tuple-closure helper family (`__F0`/`__T0`/…) is protected by `fresh_prefix`.
     #[derive(Debug, Visiting)]
     pub enum Tup<__F0, __T0> {
-        Rec(Box<Tup<__F0, __T0>>),
-        Leaf(PhantomData<(__F0, __T0)>),
+        Rec(::std::boxed::Box<crate::hygiene::Tup<__F0, __T0>>),
+        Leaf(::core::marker::PhantomData<(__F0, __T0)>),
     }
 
     pub mod vtup {
@@ -195,14 +198,14 @@ mod hygiene {
     // idents, so a visited type may have followed fields literally named `this` and `i`.
     #[derive(Debug, Visiting)]
     pub enum Leaf<S> {
-        U(PhantomData<S>),
+        U(::core::marker::PhantomData<S>),
     }
 
     #[derive(Debug, Visiting)]
     #[visiting(crate::hygiene::Leaf)]
     pub struct Names<S> {
-        pub this: Box<Leaf<S>>,
-        pub i: Leaf<S>,
+        pub this: ::std::boxed::Box<crate::hygiene::Leaf<S>>,
+        pub i: crate::hygiene::Leaf<S>,
     }
 
     pub mod vnames {
@@ -244,16 +247,17 @@ mod local_types {
     }
 
     mod ast {
-        use super::helper::Local;
-        use core::marker::PhantomData;
         use visiting::Visiting;
 
         // `Local` is intentionally a leaf; `Rec` is followed via implicit self-recursion.
         #[derive(Debug, Visiting)]
         #[visiting()]
         pub enum Expr<S> {
-            Lit(Local, PhantomData<S>),
-            Rec(Box<Expr<S>>),
+            Lit(
+                crate::local_types::helper::Local,
+                ::core::marker::PhantomData<S>,
+            ),
+            Rec(::std::boxed::Box<crate::local_types::ast::Expr<S>>),
         }
     }
 
@@ -289,8 +293,8 @@ mod where_clause {
     where
         S: crate::where_clause::Bound,
     {
-        Nest(Box<Expr<S>>),
-        Leaf(PhantomData<S>),
+        Nest(::std::boxed::Box<crate::where_clause::Expr<S>>),
+        Leaf(::core::marker::PhantomData<S>),
     }
 
     pub mod v {
@@ -314,14 +318,18 @@ mod generics {
     #[derive(Visiting)]
     #[visiting(crate::generics::BinOp)]
     pub enum Expr<S, Tokens> {
-        Bin(Box<Expr<S, Tokens>>, BinOp<S>, Box<Expr<S, Tokens>>),
-        Lit(i64, PhantomData<(S, Tokens)>),
+        Bin(
+            ::std::boxed::Box<crate::generics::Expr<S, Tokens>>,
+            crate::generics::BinOp<S>,
+            ::std::boxed::Box<crate::generics::Expr<S, Tokens>>,
+        ),
+        Lit(i64, ::core::marker::PhantomData<(S, Tokens)>),
     }
 
     #[derive(Visiting)]
     pub enum BinOp<S> {
-        Add(PhantomData<S>),
-        Mul(PhantomData<S>),
+        Add(::core::marker::PhantomData<S>),
+        Mul(::core::marker::PhantomData<S>),
     }
 
     pub mod visit {
@@ -360,9 +368,9 @@ mod union_where_unshared {
     #[visiting()]
     pub struct Bounded<S>
     where
-        S: Bound,
+        S: crate::union_where_unshared::Bound,
     {
-        pub _p: PhantomData<S>,
+        pub _p: ::core::marker::PhantomData<S>,
     }
 
     #[derive(Visiting)]
@@ -372,9 +380,8 @@ mod union_where_unshared {
     }
 
     mod v {
-        // The generated `where S: Bound` lands here, so the user trait must be in scope (a where-bound
-        // naming a user trait by bare path needs importing).
-        use crate::union_where_unshared::Bound;
+        // The generated `where S: crate::union_where_unshared::Bound` lands here. The derive takes
+        // bounds absolute, so it resolves without an import.
         visiting::define_visit!(
             crate::union_where_unshared::Bounded,
             crate::union_where_unshared::Plain

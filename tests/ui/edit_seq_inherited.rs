@@ -7,14 +7,14 @@ use visiting::Visiting;
 
 #[derive(Visiting)]
 pub enum Item<S> {
-    Leaf(PhantomData<S>),
+    Leaf(::core::marker::PhantomData<S>),
 }
 
 #[derive(Visiting)]
 #[visiting(crate::Item)]
 pub struct List<S> {
     #[seq]
-    pub items: Vec<Item<S>>, // `Item` is inherited from `base`, not targeted by `ext`
+    pub items: ::std::vec::Vec<crate::Item<S>>, // `Item` is inherited from `base`, not targeted by `ext`
 }
 
 pub mod base {

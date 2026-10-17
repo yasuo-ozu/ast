@@ -21,12 +21,14 @@ API — a closure, a visitor with state, editing a list, and extending a visitor
 use visiting::{Visiting, SeqEdit};
 
 // ── the nodes ───────────────────────────────────────────────────────────────────────────────────
+// Every path in a node is absolute: the derive announces the definition, and it is read again
+// wherever a visitor is built.
 #[derive(Visiting)]
 pub enum Expr {
     Lit(u32),
-    Neg(Box<Expr>),
+    Neg(::std::boxed::Box<crate::Expr>),
     // `#[seq]` asks for the whole slot, not one element.
-    Many(#[seq] Vec<Expr>),
+    Many(#[seq] ::std::vec::Vec<crate::Expr>),
 }
 
 // `#[visiting]` names a type this visitor should follow but does not list; `#[skip]` takes a field
@@ -34,7 +36,7 @@ pub enum Expr {
 #[derive(Visiting)]
 #[visiting(crate::Expr)]
 pub struct Stmt {
-    pub e: Expr,
+    pub e: crate::Expr,
 }
 
 // ── the visitors ────────────────────────────────────────────────────────────────────────────────
@@ -165,9 +167,8 @@ marker, which is a conflicting-implementations error.
 ## Derived nodes are announced
 
 `#[derive(Visiting)]` announces the node itself, through announce: the type implements
-`announce::Announce`, and its trampoline is announce's. announce accepts absolute paths only, so the
-derive roots the other paths of the payload at `::__visiting_rel::..` and `define_visit!` takes the
-root off; any other reader sees paths that resolve nowhere.
+`announce::Announce`, and its trampoline is announce's. Its payload is the definition as written,
+which is why a node's paths are absolute: any announce consumer can read it.
 
 A node that another reader needs announced as well — a `#[coinduction]` module exports a type by
 announcing it — writes `#[announce]` above the derive, and keeps one trampoline:
@@ -180,7 +181,7 @@ pub struct Boxed<T>(pub ::core::option::Option<::std::boxed::Box<T>>);
 ```
 
 The derive leaves the trampoline to that announcement, which carries the follow-list and the field
-markers in its payload, and checks the item's paths as for any announced item. A
+markers in its payload. A
 `#[derive(Announce)]` works the same if it is an attribute of its own below the derive and not next
 to it: the derive cannot see one in its own list, and rustfmt merges adjacent derives into one. This
 needs the merging of announcements in announce's `merge-announcements` branch.

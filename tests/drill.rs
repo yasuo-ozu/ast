@@ -9,18 +9,18 @@ mod basic {
 
     #[derive(Debug, Visiting)]
     pub enum Type<S> {
-        Unit(PhantomData<S>),
+        Unit(::core::marker::PhantomData<S>),
     }
 
     #[derive(Debug, Visiting)]
     #[visiting(crate::basic::Type)]
-    pub struct Cast<S>(pub Type<S>);
+    pub struct Cast<S>(pub crate::basic::Type<S>);
 
     #[derive(Debug, Visiting)]
     #[visiting(crate::basic::Cast)]
     pub enum Expr<S> {
-        Cast(Cast<S>),
-        Lit(PhantomData<S>),
+        Cast(crate::basic::Cast<S>),
+        Lit(::core::marker::PhantomData<S>),
     }
 
     pub mod visit {
@@ -86,22 +86,22 @@ mod chain {
     // Chain: Expr -> Wrap -> Cast -> Type
     #[derive(Debug, Visiting)]
     pub enum Type<S> {
-        Unit(PhantomData<S>),
+        Unit(::core::marker::PhantomData<S>),
     }
 
     #[derive(Debug, Visiting)]
     #[visiting(crate::chain::Type)]
-    pub struct Cast<S>(pub Type<S>);
+    pub struct Cast<S>(pub crate::chain::Type<S>);
 
     #[derive(Debug, Visiting)]
     #[visiting(crate::chain::Cast)]
-    pub struct Wrap<S>(pub Cast<S>);
+    pub struct Wrap<S>(pub crate::chain::Cast<S>);
 
     #[derive(Debug, Visiting)]
     #[visiting(crate::chain::Wrap)]
     pub enum Expr<S> {
-        W(Wrap<S>),
-        Lit(PhantomData<S>),
+        W(crate::chain::Wrap<S>),
+        Lit(::core::marker::PhantomData<S>),
     }
 
     pub mod chain {
@@ -118,18 +118,18 @@ mod chain {
 
     #[derive(Debug, Visiting)]
     pub enum Leaf<S> {
-        U(PhantomData<S>),
+        U(::core::marker::PhantomData<S>),
     }
 
     #[derive(Debug, Visiting)]
     #[visiting(crate::chain::Leaf)]
-    pub struct Item<S>(pub Leaf<S>);
+    pub struct Item<S>(pub crate::chain::Leaf<S>);
 
     #[derive(Debug, Visiting)]
     #[visiting(crate::chain::Item)]
     pub struct Block<S> {
-        pub items: Vec<Item<S>>,
-        pub opt: Option<Item<S>>,
+        pub items: ::std::vec::Vec<crate::chain::Item<S>>,
+        pub opt: ::core::option::Option<crate::chain::Item<S>>,
     }
 
     pub mod container {
@@ -152,13 +152,13 @@ mod chain {
 
     // Finite dead-end: an unlisted intermediate reaching no visited type — a no-op, not an error.
     #[derive(Debug, Visiting)]
-    pub struct Dead<S>(pub i64, pub PhantomData<S>);
+    pub struct Dead<S>(pub i64, pub ::core::marker::PhantomData<S>);
 
     #[derive(Debug, Visiting)]
     #[visiting(crate::chain::Dead)]
     pub enum ExprD<S> {
-        D(Dead<S>),
-        Lit(PhantomData<S>),
+        D(crate::chain::Dead<S>),
+        Lit(::core::marker::PhantomData<S>),
     }
 
     pub mod deadend {
@@ -183,11 +183,10 @@ mod fixes {
     use visiting::Visiting;
 
     mod other {
-        use core::marker::PhantomData;
         use visiting::Visiting;
         #[derive(Debug, Visiting)]
         pub enum Real<S> {
-            U(PhantomData<S>),
+            U(::core::marker::PhantomData<S>),
         }
     }
 
@@ -197,8 +196,8 @@ mod fixes {
     #[derive(Debug, Visiting)]
     #[visiting(crate::fixes::other::Real as Aliased)]
     pub enum Expr<S> {
-        R(Aliased<S>),
-        Lit(PhantomData<S>),
+        R(crate::fixes::Aliased<S>),
+        Lit(::core::marker::PhantomData<S>),
     }
 
     pub mod va {
@@ -218,23 +217,22 @@ mod fixes {
 
     #[derive(Debug, Visiting)]
     pub enum Leaf<S> {
-        U(PhantomData<S>),
+        U(::core::marker::PhantomData<S>),
     }
 
     mod weird {
-        use super::Leaf;
         use visiting::Visiting;
         // A user type whose name collides with the `Option` container keyword.
         #[derive(Debug, Visiting)]
         #[visiting(crate::fixes::Leaf)]
-        pub struct Option<S>(pub Leaf<S>);
+        pub struct Option<S>(pub crate::fixes::Leaf<S>);
     }
 
     #[derive(Debug, Visiting)]
     #[visiting(crate::fixes::weird::Option)]
     pub enum Outer<S> {
-        O(weird::Option<S>),
-        Lit(PhantomData<S>),
+        O(crate::fixes::weird::Option<S>),
+        Lit(::core::marker::PhantomData<S>),
     }
 
     pub mod vw {
@@ -256,13 +254,13 @@ mod fixes {
     // duplicate inherent `visit`/`visit_mut`.
     #[derive(Debug, Visiting)]
     pub enum LeafB<S> {
-        U(PhantomData<S>),
+        U(::core::marker::PhantomData<S>),
     }
 
     #[derive(Debug, Visiting)]
     #[visiting(crate::fixes::LeafB)]
     pub struct Holder<S> {
-        pub boxed_opt: Box<Option<LeafB<S>>>,
+        pub boxed_opt: ::std::boxed::Box<::core::option::Option<crate::fixes::LeafB<S>>>,
     }
 
     pub mod vh {
@@ -311,7 +309,7 @@ mod paths {
 
     #[derive(Debug, Visiting)]
     pub enum Type<S> {
-        Unit(PhantomData<S>),
+        Unit(::core::marker::PhantomData<S>),
     }
 
     pub mod a {
@@ -334,8 +332,8 @@ mod paths {
     #[derive(Debug, Visiting)]
     #[visiting(crate::paths::a::Cast, crate::paths::b::Cast as BCast)]
     pub enum Expr<S> {
-        A(Cast<S>),
-        B(BCast<S>),
+        A(crate::paths::a::Cast<S>),
+        B(crate::paths::BCast<S>),
     }
 
     pub mod visit {

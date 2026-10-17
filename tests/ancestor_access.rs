@@ -7,25 +7,25 @@ use visiting::Visiting;
 
 #[derive(Visiting)]
 pub enum Type<S> {
-    Unit(PhantomData<S>),
+    Unit(::core::marker::PhantomData<S>),
 }
 
 #[derive(Visiting)]
 #[visiting(crate::Type)]
 pub enum Expr<S> {
-    T(Box<Type<S>>),
+    T(::std::boxed::Box<crate::Type<S>>),
 }
 
 #[derive(Visiting)]
 #[visiting(crate::Expr)]
 pub enum Stmt<S> {
-    E(Box<Expr<S>>),
+    E(::std::boxed::Box<crate::Expr<S>>),
 }
 
 #[derive(Visiting)]
 #[visiting(crate::Stmt)]
 pub enum Item<S> {
-    S(Box<Stmt<S>>),
+    S(::std::boxed::Box<crate::Stmt<S>>),
 }
 
 pub mod base {

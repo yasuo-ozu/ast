@@ -16,9 +16,9 @@ pub enum Leaf {
 #[derive(Visiting, Debug)]
 pub struct Holder {
     #[seq]
-    pub items: Vec<Leaf>,
+    pub items: ::std::vec::Vec<crate::Leaf>,
     #[opt]
-    pub maybe: Option<Leaf>,
+    pub maybe: ::core::option::Option<crate::Leaf>,
 }
 
 pub mod visit {
@@ -143,7 +143,7 @@ mod borrowed_elements {
     #[visiting(crate::borrowed_elements::Borrowed)]
     pub struct Doc<'s> {
         #[seq]
-        pub words: Vec<Borrowed<'s>>,
+        pub words: ::std::vec::Vec<crate::borrowed_elements::Borrowed<'s>>,
     }
 
     pub mod v {

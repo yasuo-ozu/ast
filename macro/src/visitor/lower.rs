@@ -436,7 +436,11 @@ impl<'a> Lower<'a> {
                      those nodes are unreachable however the visitor is written. Give `{}` a field \
                      of the concrete type instead of `{}`, or list the instantiated node and reach \
                      it from there",
-                    quote!(#arg_ty).to_string().replace(' ', ""),
+                    // An announced definition names its own crate `$crate`; say it as it was written.
+                    quote!(#arg_ty)
+                        .to_string()
+                        .replace(' ', "")
+                        .replace("$crate", "crate"),
                     head,
                     param,
                     head,

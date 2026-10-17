@@ -1,8 +1,8 @@
 error[E0277]: `Plain<S>` is not an AST node
   --> tests/ui/subast_entry_not_a_node.rs:12:12
    |
-12 |     pub p: Plain<S>,
-   |            ^^^^^^^^ not an AST node
+12 |     pub p: crate::Plain<S>,
+   |            ^^^^^^^^^^^^^^^ not an AST node
    |
    = help: the trait `Visiting` is not implemented for `Plain<S>`
    = note: declare `Plain<S>` a node — `#[derive(Visiting)]`, or a `visiting(..)` check in its `#[announce]` — since every entry in a follow-list has to be one

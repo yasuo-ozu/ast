@@ -10,16 +10,16 @@ mod nested {
     #[derive(Visiting)]
     #[visiting()]
     pub struct Leaf<S> {
-        pub _p: PhantomData<S>,
+        pub _p: ::core::marker::PhantomData<S>,
         pub value: i64,
     }
 
     #[derive(Visiting)]
     #[visiting(crate::nested::Leaf)]
     pub struct Holder<S> {
-        pub vo: Vec<Option<Leaf<S>>>,
-        pub ov: Option<Vec<Leaf<S>>>,
-        pub vv: Vec<Vec<Leaf<S>>>,
+        pub vo: ::std::vec::Vec<::core::option::Option<crate::nested::Leaf<S>>>,
+        pub ov: ::core::option::Option<::std::vec::Vec<crate::nested::Leaf<S>>>,
+        pub vv: ::std::vec::Vec<::std::vec::Vec<crate::nested::Leaf<S>>>,
     }
 
     mod v {
@@ -80,16 +80,28 @@ mod container_of_tuple {
     #[derive(Visiting)]
     #[visiting()]
     pub struct Leaf<S> {
-        pub _p: PhantomData<S>,
+        pub _p: ::core::marker::PhantomData<S>,
     }
 
     #[derive(Visiting)]
     #[visiting(crate::container_of_tuple::Leaf)]
     pub struct Holder<S> {
-        pub top: (Leaf<S>, Leaf<S>),
-        pub vec_of_tuples: Vec<(Leaf<S>, Leaf<S>)>,
-        pub opt_of_tuple: Option<(Leaf<S>, Leaf<S>)>,
-        pub boxed_tuple: Box<(Leaf<S>, Leaf<S>)>,
+        pub top: (
+            crate::container_of_tuple::Leaf<S>,
+            crate::container_of_tuple::Leaf<S>,
+        ),
+        pub vec_of_tuples: ::std::vec::Vec<(
+            crate::container_of_tuple::Leaf<S>,
+            crate::container_of_tuple::Leaf<S>,
+        )>,
+        pub opt_of_tuple: ::core::option::Option<(
+            crate::container_of_tuple::Leaf<S>,
+            crate::container_of_tuple::Leaf<S>,
+        )>,
+        pub boxed_tuple: ::std::boxed::Box<(
+            crate::container_of_tuple::Leaf<S>,
+            crate::container_of_tuple::Leaf<S>,
+        )>,
     }
 
     mod v {
@@ -140,16 +152,21 @@ mod tuple_field {
 
     #[derive(Visiting)]
     pub enum Ty<S> {
-        Unit(PhantomData<S>),
+        Unit(::core::marker::PhantomData<S>),
     }
 
     #[derive(Visiting)]
     #[visiting(crate::tuple_field::Ty)]
     pub enum Expr<S> {
-        Pair((Ty<S>, Ty<S>)),
+        Pair((crate::tuple_field::Ty<S>, crate::tuple_field::Ty<S>)),
         // Nested tuple with a leaf element exercises recursion + `_` binding for non-followed members.
-        Triple((Ty<S>, (PhantomData<S>, Ty<S>))),
-        Lit(PhantomData<S>),
+        Triple(
+            (
+                crate::tuple_field::Ty<S>,
+                (::core::marker::PhantomData<S>, crate::tuple_field::Ty<S>),
+            ),
+        ),
+        Lit(::core::marker::PhantomData<S>),
     }
 
     pub mod v {
@@ -375,9 +392,9 @@ mod own_container {
     #[visiting(crate::own_container::Item)]
     pub struct Doc {
         #[seq]
-        pub items: Punctuated<Item, char>,
+        pub items: crate::own_container::Punctuated<crate::own_container::Item, char>,
         #[opt]
-        pub trailing: Optional<Item>,
+        pub trailing: crate::own_container::Optional<crate::own_container::Item>,
     }
 
     pub mod v {
@@ -522,7 +539,7 @@ mod own_map {
     #[visiting(crate::own_map::Item)]
     pub struct Doc {
         // No marker: a keyed slot has no positional edit, so the field is walked and nothing else.
-        pub table: Registry<&'static str, Item>,
+        pub table: crate::own_map::Registry<&'static str, crate::own_map::Item>,
     }
 
     pub mod v {
@@ -588,8 +605,8 @@ mod other_shapes {
     #[derive(Visiting)]
     #[visiting(crate::other_shapes::Leaf)]
     pub struct Holder {
-        pub deque: VecDeque<Leaf>,
-        pub array: [Leaf; 3],
+        pub deque: ::std::collections::VecDeque<crate::other_shapes::Leaf>,
+        pub array: [crate::other_shapes::Leaf; 3],
     }
 
     pub mod v {

@@ -5,7 +5,6 @@
 //!
 //! This is the shape behind the old `bug7` regression, where the generated visitor mis-called
 //! `visit_stmt` on the foreign type. It is now refused rather than handled.
-use core::marker::PhantomData;
 use visiting::Visiting;
 
 mod other {
@@ -15,16 +14,16 @@ mod other {
 #[derive(Visiting)]
 #[visiting()]
 pub enum Expr<S> {
-    ToStmt(Box<Stmt<S>>),
+    ToStmt(::std::boxed::Box<crate::Stmt<S>>),
     Foreign(crate::other::Stmt),
-    Lit(PhantomData<S>),
+    Lit(::core::marker::PhantomData<S>),
 }
 
 #[derive(Visiting)]
 #[visiting()]
 pub enum Stmt<S> {
-    Back(Box<Expr<S>>),
-    Nop(PhantomData<S>),
+    Back(::std::boxed::Box<crate::Expr<S>>),
+    Nop(::core::marker::PhantomData<S>),
 }
 
 fn main() {}

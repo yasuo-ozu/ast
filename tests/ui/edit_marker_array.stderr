@@ -1,8 +1,8 @@
 error: a `#[seq]` field's container is an array/slice — not structurally editable; use `Vec`/`VecDeque`/`Option`, or any container implementing `SeqView`/`OptView`
   --> tests/ui/edit_marker_array.rs:15:16
    |
-15 |     pub items: [Leaf<S>; 3],
-   |                ^^^^^^^^^^^^
+15 |     pub items: [crate::Leaf<S>; 3],
+   |                ^^^^^^^^^^^^^^^^^^^
 ...
 19 |     visiting::define_visit!(crate::Wrap, crate::Leaf);
    |     ------------------------------------------------- in this macro invocation

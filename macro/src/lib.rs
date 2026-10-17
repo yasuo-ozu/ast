@@ -8,7 +8,7 @@ use proc_macro::TokenStream as TokenStream1;
 use proc_macro_error3::proc_macro_error;
 use syn::*;
 
-mod relative;
+mod absolute;
 mod util;
 mod visiting;
 mod visitor;

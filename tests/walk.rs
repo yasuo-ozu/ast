@@ -17,16 +17,16 @@ mod ast {
     #[derive(Debug, Visiting)]
     pub enum Line {
         Text(i64),
-        Nested(Box<Line>),
+        Nested(::std::boxed::Box<crate::ast::Line>),
     }
 
     #[derive(Debug, Visiting)]
     #[visiting(crate::ast::Line)]
     pub struct Page {
-        pub placed: Vec<(Length, Line)>,
-        pub header: Option<Box<Line>>,
-        pub by_name: std::collections::BTreeMap<String, Line>,
-        pub width: Length,
+        pub placed: ::std::vec::Vec<(crate::ast::Length, crate::ast::Line)>,
+        pub header: ::core::option::Option<::std::boxed::Box<crate::ast::Line>>,
+        pub by_name: ::std::collections::BTreeMap<::std::string::String, crate::ast::Line>,
+        pub width: crate::ast::Length,
     }
 
     pub mod v {
@@ -102,8 +102,8 @@ mod collides {
     #[derive(Debug, Visiting)]
     #[visiting(crate::collides::Node)]
     pub struct Holder {
-        pub both: Vec<(Node, Node)>,
-        pub tagged: Vec<(Mark, Node)>,
+        pub both: ::std::vec::Vec<(crate::collides::Node, crate::collides::Node)>,
+        pub tagged: ::std::vec::Vec<(crate::collides::Mark, crate::collides::Node)>,
     }
 
     pub mod v {

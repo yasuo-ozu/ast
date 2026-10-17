@@ -1,7 +1,7 @@
 error: cannot find macro `impl_chain` in this scope
-  --> tests/ui/glob_import_hides_chain.rs:35:1
+  --> tests/ui/glob_import_hides_chain.rs:34:1
    |
-35 | impl_chain!(top; P);
+34 | impl_chain!(top; P);
    | ^^^^^^^^^^
    |
 help: consider importing one of these macros

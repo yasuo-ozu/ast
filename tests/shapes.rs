@@ -10,22 +10,22 @@ use visiting::Visiting;
 
 #[derive(Visiting)]
 pub enum Type<S> {
-    U(PhantomData<S>),
+    U(::core::marker::PhantomData<S>),
 }
 #[derive(Visiting)]
 #[visiting(crate::Type)]
 pub struct Expr<S> {
-    pub t: Type<S>,
+    pub t: crate::Type<S>,
 }
 #[derive(Visiting)]
 #[visiting(crate::Expr)]
 pub struct Stmt<S> {
-    pub e: Expr<S>,
+    pub e: crate::Expr<S>,
 }
 #[derive(Visiting)]
 #[visiting(crate::Stmt)]
 pub struct Item<S> {
-    pub s: Stmt<S>,
+    pub s: crate::Stmt<S>,
 }
 
 pub mod base {

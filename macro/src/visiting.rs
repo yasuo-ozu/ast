@@ -342,6 +342,7 @@ pub fn derive_visiting(input: &DeriveInput) -> TokenStream {
     }
 
     check_ambiguous_last_idents(input);
+    let paths_absolute = crate::absolute::check(input);
     let attr = parse_visiting(&input.attrs);
     validate_follow(&attr.follow);
     let subast = attr.follow;
@@ -381,7 +382,8 @@ pub fn derive_visiting(input: &DeriveInput) -> TokenStream {
 
     // Another announcement of this item makes the trampoline, and a visitor reads the follow-list
     // and the field markers from its payload instead. A second trampoline would take the same name.
-    let trampoline = if announced_elsewhere(&input.attrs) {
+    // With a relative path, announce would only repeat the first of the errors already reported.
+    let trampoline = if announced_elsewhere(&input.attrs) || !paths_absolute {
         quote!()
     } else {
         announce_node(input, root, &subast)
@@ -401,15 +403,15 @@ pub fn derive_visiting(input: &DeriveInput) -> TokenStream {
 /// The trampoline and the `Announce` impl that `#[derive(Announce)]` would write, through announce
 /// itself, so that a visitor and any other announce consumer read the node the same way.
 ///
-/// The payload is the cleaned definition with its relative paths marked (see [`crate::relative`]),
-/// and the follow-list rides in META as `visiting(..)`, where announce re-roots its `crate::` paths at
+/// The payload is the cleaned definition, whose paths announce checks as for any announced item —
+/// absolute or `crate::`-rooted, since it is re-used where the visitor is built — and the
+/// follow-list rides in META as `visiting(..)`, where announce re-roots its `crate::` paths at
 /// `$crate::`. announce is reached through the crate's own re-export, `#root::visit::__announce`, so a node
 /// needs no dependency on it.
 fn announce_node(input: &DeriveInput, root: &Path, subast: &[SubastEntry]) -> TokenStream {
     let mut item = cleaned_definition(input);
     // announce re-exports the trampoline at the item's visibility.
     item.vis = input.vis.clone();
-    crate::relative::mark(&mut item);
     let entries = subast.iter().map(|e| {
         let (path, key) = (&e.path, e.matchkey());
         quote!( #path as #key )
@@ -421,23 +423,8 @@ fn announce_node(input: &DeriveInput, root: &Path, subast: &[SubastEntry]) -> To
         Ok(opts) => opts,
         Err(e) => return e.to_compile_error(),
     };
-    let out = match announce_core::derive_announce_with(opts, quote!(#item)) {
-        Ok(out) => out,
-        Err(e) => return e.to_compile_error(),
-    };
-    // The `Announce` impl repeats the item's generics and where-clause, and unlike the payload it is
-    // compiled here, so its paths are put back as written. The trampoline keeps the marked copy.
-    match syn::parse2::<File>(out.clone()) {
-        Ok(mut file) => {
-            for it in &mut file.items {
-                if let Item::Impl(_) = it {
-                    crate::relative::unmark(it);
-                }
-            }
-            quote!(#file)
-        }
-        Err(_) => out,
-    }
+    announce_core::derive_announce_with(opts, quote!(#item))
+        .unwrap_or_else(|e| e.to_compile_error())
 }
 
 /// Whether an attribute left on the item announces it: an `#[announce]` below the derive (any

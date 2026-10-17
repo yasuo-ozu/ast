@@ -1,38 +1,37 @@
 //! Stage 2: `#[derive(Visiting)]` emits the marker impl and announces the node: announce's trampoline
 //! under the type's own name, in the macro namespace, and the `Announce` impl.
 
-use core::marker::PhantomData;
 use visiting::Visiting;
 
 #[derive(Visiting)]
 #[visiting(crate::Stmt)]
 pub enum Expr<S> {
-    Stmt(Box<Stmt<S>>),
-    Other(PhantomData<S>),
+    Stmt(::std::boxed::Box<crate::Stmt<S>>),
+    Other(::core::marker::PhantomData<S>),
 }
 
 #[derive(Visiting)]
 #[visiting(crate::Expr)]
 pub enum Stmt<S> {
-    Expr(Box<Expr<S>>),
-    Other(PhantomData<S>),
+    Expr(::std::boxed::Box<crate::Expr<S>>),
+    Other(::core::marker::PhantomData<S>),
 }
 
 #[derive(Visiting)]
 #[visiting(crate::Expr)]
 pub struct Wrap<S> {
-    pub inner: Expr<S>,
+    pub inner: crate::Expr<S>,
 }
 
 #[derive(Visiting)]
-pub struct Inner<S>(pub PhantomData<S>);
+pub struct Inner<S>(pub ::core::marker::PhantomData<S>);
 
 // `#[visiting(..)]` records this type's sub-AST children + their resolvable paths. The path must be
 // fully qualified (`crate`-rooted here), so it resolves wherever the metadata macro is expanded.
 #[derive(Visiting)]
 #[visiting(crate::Inner)]
 pub struct Outer<S> {
-    pub child: Inner<S>,
+    pub child: crate::Inner<S>,
 }
 
 /// `Visiting` (the marker trait) is implemented.
@@ -57,22 +56,23 @@ fn repeater_is_implemented_on_the_type_itself() {
 
 #[test]
 fn metadata_macro_round_trips_definition() {
-    // A local callback in announce's shape, which receives the definition. The forwarded tokens
-    // parse as a single item, and the path-callback invocation works.
+    // A local callback in announce's shape, which receives the definition and re-emits it as a real
+    // (renamed) type, proving the trampoline carries the definition as written — its paths are
+    // absolute, so it compiles wherever it is read — and that the path-callback invocation works.
     macro_rules! rebuild {
         ([$($cb:tt)*] $($p:ident)::+ ! => [$($meta:tt)*] { $item:item } @state $_c:path { }) => {
-            const PAYLOAD: &str = stringify!($item);
+            // Re-emit it in a fresh module so it does not clash with the original `Expr`.
+            #[allow(dead_code)]
+            mod rebuilt {
+                $item
+            }
         };
     }
 
     // `Expr!` resolves to the re-exported trampoline (macro namespace), distinct from the `Expr`
     // enum (type namespace).
     Expr! { [Expr!, rebuild!] @state rebuild { } }
-    let payload: String = PAYLOAD.split_whitespace().collect();
-    // announce takes absolute paths only, so the relative ones ride rooted at `::__visiting_rel`,
-    // which a visitor takes off again; what is already absolute is left alone.
-    assert!(payload.contains("::__visiting_rel::Box<::__visiting_rel::Stmt<::__visiting_rel::S>>"));
-    assert!(payload.contains("::__visiting_rel::PhantomData<::__visiting_rel::S>"));
+    let _ = rebuilt::Expr::Other(::core::marker::PhantomData::<()>);
 }
 
 #[test]

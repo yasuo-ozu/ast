@@ -5,14 +5,14 @@ use visiting::Visiting;
 
 #[derive(Visiting)]
 pub enum Leaf<S> {
-    A(PhantomData<S>),
+    A(::core::marker::PhantomData<S>),
 }
 
 #[derive(Visiting)]
 #[visiting(crate::Leaf)]
 pub struct Wrap<S> {
     #[seq]
-    pub inner: Box<Leaf<S>>,
+    pub inner: ::std::boxed::Box<crate::Leaf<S>>,
 }
 
 pub mod vis {

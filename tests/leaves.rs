@@ -12,10 +12,10 @@ mod skip {
     #[derive(Visiting)]
     #[visiting(crate::skip::Leaf)]
     pub struct Node {
-        pub a: Leaf,
+        pub a: crate::skip::Leaf,
         #[skip]
-        pub b: Leaf,
-        pub c: Vec<Leaf>,
+        pub b: crate::skip::Leaf,
+        pub c: ::std::vec::Vec<crate::skip::Leaf>,
     }
 
     pub mod v {
@@ -63,7 +63,7 @@ mod facade {
     #[visiting(crate = crate::facade::my_crate)]
     #[visiting(crate::facade::Leaf)]
     pub struct Node {
-        pub leaves: Vec<Leaf>,
+        pub leaves: ::std::vec::Vec<crate::facade::Leaf>,
     }
 
     pub mod v {

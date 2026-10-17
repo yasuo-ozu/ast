@@ -8,14 +8,14 @@ use visiting::{Visiting, OptView, SeqView};
 
 #[derive(Visiting)]
 pub enum Leaf<S> {
-    A(PhantomData<S>),
+    A(::core::marker::PhantomData<S>),
 }
 
 #[derive(Visiting)]
 #[visiting(crate::Leaf)]
 pub struct Wrap<S> {
-    pub items: Vec<Leaf<S>>,   // not `#[seq]` -> no `visit_leaf_seq_mut`
-    pub last: Option<Leaf<S>>, // not `#[opt]` -> no `visit_leaf_opt_mut`
+    pub items: ::std::vec::Vec<crate::Leaf<S>>,   // not `#[seq]` -> no `visit_leaf_seq_mut`
+    pub last: ::core::option::Option<crate::Leaf<S>>, // not `#[opt]` -> no `visit_leaf_opt_mut`
 }
 
 pub mod vis {

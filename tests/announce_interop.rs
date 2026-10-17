@@ -97,7 +97,7 @@ pub struct Twig {
 #[derive(visiting::Visiting)]
 #[visiting(crate::Twig)]
 pub struct Derived {
-    pub twig: Twig,
+    pub twig: crate::Twig,
 }
 
 pub mod visit_mixed {

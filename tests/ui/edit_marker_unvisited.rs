@@ -5,15 +5,15 @@ use visiting::Visiting;
 
 #[derive(Visiting)]
 pub enum Leaf<S> {
-    A(PhantomData<S>),
+    A(::core::marker::PhantomData<S>),
 }
 
 #[derive(Visiting)]
 #[visiting(crate::Leaf)]
 pub struct Wrap<S> {
     #[seq]
-    pub items: Vec<String>, // `String` is not a visited AST type
-    pub leaf: Leaf<S>,
+    pub items: ::std::vec::Vec<::std::string::String>, // `String` is not a visited AST type
+    pub leaf: crate::Leaf<S>,
 }
 
 pub mod vis {
